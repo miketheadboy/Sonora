@@ -1,0 +1,7 @@
+{
+  "name": "Sonora AI: Songwriting Copilot",
+  "description": "An AI-powered songwriting aid to spark creativity. Generate ideas, find rhymes, get chord progressions, and overcome writer's block with your digital co-writer.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
