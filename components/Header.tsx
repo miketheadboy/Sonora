@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, memo } from 'react';
 import { MusicNoteIcon, FilePlusIcon, DownloadIcon, ShareIcon, Bars3Icon } from './icons';
 
 interface HeaderProps {
@@ -11,7 +12,7 @@ interface HeaderProps {
     onToggleTools: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ title, onUpdateTitle, onNewSong, onExport, onShare, onToggleStructure, onToggleTools }) => {
+const HeaderComponent: React.FC<HeaderProps> = ({ title, onUpdateTitle, onNewSong, onExport, onShare, onToggleStructure, onToggleTools }) => {
     const [linkCopied, setLinkCopied] = useState(false);
     const [currentTitle, setCurrentTitle] = useState(title);
 
@@ -92,3 +93,5 @@ export const Header: React.FC<HeaderProps> = ({ title, onUpdateTitle, onNewSong,
         </header>
     );
 };
+
+export const Header = memo(HeaderComponent);

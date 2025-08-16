@@ -1,4 +1,5 @@
-import React from 'react';
+
+import React, { memo } from 'react';
 
 // Using a filter to create a hand-drawn effect
 const SketchFilter = () => (
@@ -16,12 +17,12 @@ const SketchFilter = () => (
 );
 
 const withSketchFilter = <P extends object>(Component: React.ComponentType<P>): React.FC<P> => {
-    return (props: P) => (
+    return memo((props: P) => (
         <>
             <SketchFilter />
             <Component {...props} style={{ ...((props as any).style), filter: 'url(#sketch-filter)' }} />
         </>
-    );
+    ));
 };
 
 export const MusicNoteIcon: React.FC<React.SVGProps<SVGSVGElement>> = withSketchFilter((props) => (

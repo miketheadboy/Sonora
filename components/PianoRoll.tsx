@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, MouseEvent } from 'react';
+
+import React, { useState, useRef, MouseEvent, memo } from 'react';
 import type { MelodyNote, ProgressionStep } from '../types';
 import { MELODY_PITCHES } from '../constants';
 
@@ -14,7 +15,7 @@ const BEAT_WIDTH = 40; // width of one beat in pixels
 const PITCH_HEIGHT = 24; // height of one pitch row in pixels
 const PITCHES = MELODY_PITCHES;
 
-export const PianoRoll: React.FC<PianoRollProps> = ({ melody, progression, onMelodyChange, playheadPosition, isPlaying }) => {
+const PianoRollComponent: React.FC<PianoRollProps> = ({ melody, progression, onMelodyChange, playheadPosition, isPlaying }) => {
     const [isDrawing, setIsDrawing] = useState(false);
     const [drawingNote, setDrawingNote] = useState<MelodyNote | null>(null);
     const gridRef = useRef<HTMLDivElement>(null);
@@ -89,6 +90,16 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ melody, progression, onMel
         return block;
     });
 
+    const gridStyle = {
+        width: gridWidth,
+        height: gridHeight,
+        backgroundImage: `
+            repeating-linear-gradient(to right, rgba(229, 226, 222, 0.7) 0 1px, transparent 1px ${BEAT_WIDTH / 4}px),
+            repeating-linear-gradient(to right, rgba(195, 191, 185, 0.7) 0 1px, transparent 1px ${BEAT_WIDTH}px),
+            repeating-linear-gradient(to bottom, rgba(195, 191, 185, 0.5) 0 1px, transparent 1px ${PITCH_HEIGHT}px)
+        `,
+    };
+
     return (
         <div>
             <div className="flex gap-2">
@@ -99,22 +110,14 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ melody, progression, onMel
                     <div
                         ref={gridRef}
                         className="relative cursor-crosshair"
-                        style={{ width: gridWidth, height: gridHeight }}
+                        style={gridStyle}
                         onMouseDown={handleMouseDown}
                         onMouseMove={handleMouseMove}
                         onMouseUp={handleMouseUp}
                         onMouseLeave={handleMouseLeave}
                     >
-                        {/* Background Grid and Chord Blocks */}
-                        <div className="absolute inset-0">
-                           {chordBlocks}
-                           {Array.from({ length: totalBeats }).map((_, i) => (
-                                <div key={i} className="absolute top-0 bottom-0 border-l border-sepia-300/50" style={{ left: i * BEAT_WIDTH }} />
-                           ))}
-                           {PITCHES.map((p, i) => (
-                                <div key={p} className="absolute left-0 right-0 border-t border-sepia-300/50" style={{ top: i * PITCH_HEIGHT }} />
-                           ))}
-                        </div>
+                        {/* Background Chord Blocks */}
+                        <div className="absolute inset-0">{chordBlocks}</div>
                         
                         {/* Rendered Melody Notes */}
                         {melody.map((note, i) => {
@@ -158,3 +161,5 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ melody, progression, onMel
         </div>
     );
 };
+
+export const PianoRoll = memo(PianoRollComponent);

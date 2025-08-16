@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, memo } from 'react';
 import type { SongSection, SectionType } from '../types';
 import { TrashIcon, CheckIcon, XMarkIcon, SparklesIcon } from './icons';
 import { SECTION_TYPES } from '../constants';
@@ -15,7 +16,7 @@ interface SectionBlockProps {
     onDragEnd: (e: React.DragEvent) => void;
 }
 
-const SectionBlock: React.FC<SectionBlockProps> = ({ section, isActive, onSelect, onDelete, onUpdate, ...dragProps }) => {
+const SectionBlock: React.FC<SectionBlockProps> = memo(({ section, isActive, onSelect, onDelete, onUpdate, ...dragProps }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editedLabel, setEditedLabel] = useState(section.label);
     const [editedType, setEditedType] = useState<SectionType>(section.type);
@@ -116,7 +117,7 @@ const SectionBlock: React.FC<SectionBlockProps> = ({ section, isActive, onSelect
             </button>
         </div>
     );
-};
+});
 
 
 interface SongStructureEditorProps {
@@ -129,7 +130,7 @@ interface SongStructureEditorProps {
     onAddSection: (type: SectionType) => void;
 }
 
-export const SongStructureEditor: React.FC<SongStructureEditorProps> = ({ sections, activeSectionId, onSectionSelect, onReorder, onDelete, onUpdateSection, onAddSection }) => {
+const SongStructureEditorComponent: React.FC<SongStructureEditorProps> = ({ sections, activeSectionId, onSectionSelect, onReorder, onDelete, onUpdateSection, onAddSection }) => {
     const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
     const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -193,3 +194,5 @@ export const SongStructureEditor: React.FC<SongStructureEditorProps> = ({ sectio
         </div>
     );
 };
+
+export const SongStructureEditor = memo(SongStructureEditorComponent);

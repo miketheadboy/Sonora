@@ -5,16 +5,20 @@ import type { GenerateIdeaParams, GenerateChordsParams, GenerateRhymesParams, Ge
 let ai: GoogleGenAI | null = null;
 const model = 'gemini-2.5-flash';
 
-const getAiInstance = (): GoogleGenAI => {
-    if (ai) {
-        return ai;
-    }
+const getApiKey = (): string => {
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
         // This specific error message will be caught and displayed to the user.
         throw new Error("API key is missing. Please ensure the API_KEY environment variable is set correctly.");
     }
-    ai = new GoogleGenAI({ apiKey });
+    return apiKey;
+}
+
+const getAiInstance = (): GoogleGenAI => {
+    if (ai) {
+        return ai;
+    }
+    ai = new GoogleGenAI({ apiKey: getApiKey() });
     return ai;
 };
 
@@ -221,54 +225,68 @@ Analyze this audio and provide creative suggestions to help them develop the ide
 1.  **Analyze the audio:** Describe its core musical characteristics (mood, tempo, contour).
 2.  **Suggest lyrics:** Write a 4-line verse that matches the mood and rhythm.
 3.  **Suggest chords:** Propose a simple 4-chord progression (e.g., "C - G - Am - F").
-Return a JSON object with your analysis and suggestions.`;
-        const aiInstance = getAiInstance();
 
-        const audioAnalysisSchema = {
-            type: Type.OBJECT,
-            properties: {
-                analysis: {
-                    type: Type.OBJECT,
-                    properties: {
-                        mood: { type: Type.STRING, description: "The overall mood of the melody (e.g., 'melancholic', 'upbeat', 'haunting')." },
-                        tempo: { type: Type.STRING, description: "The estimated tempo (e.g., 'slow ballad', 'mid-tempo groove', 'fast and energetic')." },
-                        contour: { type: Type.STRING, description: "A brief description of the melodic shape (e.g., 'A simple, ascending line that resolves downwards')." }
+Your response MUST be a single, valid JSON object, with no other text or markdown formatting (like \`\`\`json).
+The JSON object must have the following structure:
+{
+  "analysis": {
+    "mood": "string",
+    "tempo": "string",
+    "contour": "string"
+  },
+  "lyricSuggestion": "string",
+  "chordSuggestion": "string"
+}`;
+
+        const apiKey = getApiKey();
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+        const requestBody = {
+            contents: [{
+                parts: [
+                    { text: prompt },
+                    {
+                        inlineData: {
+                            mimeType: mimeType,
+                            data: audioBase64,
+                        },
                     },
-                     required: ["mood", "tempo", "contour"],
-                },
-                lyricSuggestion: {
-                    type: Type.STRING,
-                    description: "A 4-line verse that fits the mood and rhythm of the audio. Use \\n for newlines."
-                },
-                chordSuggestion: {
-                    type: Type.STRING,
-                    description: "A 4-chord progression (e.g., 'C - G - Am - F') that could harmonize the melody."
-                }
-            },
-            required: ["analysis", "lyricSuggestion", "chordSuggestion"],
-        };
-        
-        const audioPart = {
-            inlineData: {
-                mimeType,
-                data: audioBase64,
+                ],
+            }],
+            generationConfig: {
+                responseMimeType: "application/json",
             },
         };
 
-        const response = await aiInstance.models.generateContent({
-            model,
-            contents: { parts: [ {text: prompt}, audioPart ] },
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: audioAnalysisSchema,
-            },
-        });
-        const jsonText = response.text.trim();
         try {
+            const blob = new Blob([JSON.stringify(requestBody)], { type: 'application/json' });
+            const fetchResponse = await fetch(url, {
+                method: 'POST',
+                body: blob,
+            });
+
+            if (!fetchResponse.ok) {
+                const errorBody = await fetchResponse.json();
+                console.error("API Error Body:", errorBody);
+                const message = errorBody.error?.message || 'Unknown API error';
+                throw new Error(`API request failed with status ${fetchResponse.status}: ${message}`);
+            }
+
+            const responseData = await fetchResponse.json();
+            const jsonText = responseData.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (!jsonText) {
+                console.error("Invalid response structure:", responseData);
+                throw new Error("Received an empty or invalid response from the AI.");
+            }
+            
             return JSON.parse(jsonText);
         } catch (e) {
-            console.error("Failed to parse JSON response:", jsonText);
-            throw new Error("Received an invalid JSON response from the AI.");
+            console.error("Failed during manual API call for audio analysis:", e);
+            if (e instanceof Error) {
+                 throw new Error(`Audio analysis failed: ${e.message}`);
+            }
+            throw new Error("An unknown error occurred during audio analysis.");
         }
     },
 

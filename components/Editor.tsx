@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+
+import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import type { SongSection, ContentPart, Author, LyricModificationType } from '../types';
 import { SparklesIcon, TrashIcon, UserIcon, RobotIcon, MicrophoneIcon, StopIcon, WandIcon, ArrowPathIcon, QueueListIcon, CubeTransparentIcon } from './icons';
 
@@ -173,7 +174,7 @@ const AICoWriter: React.FC<{ onGenerate: (prompt: string) => void }> = ({ onGene
     );
 };
 
-const MelodySketchpad: React.FC<{
+const AudioRecorder: React.FC<{
     section: SongSection;
     onUpdateAudio: (sectionId: string, audioBlob: Blob) => void;
     onDeleteAudio: (sectionId: string) => void;
@@ -220,7 +221,7 @@ const MelodySketchpad: React.FC<{
 
     return (
         <div className="border-t border-sepia-200 p-3 bg-sepia-200/20">
-            <h4 className="text-xs font-typewriter font-semibold text-sepia-800 uppercase tracking-wider mb-2">Melody Sketchpad</h4>
+            <h4 className="text-xs font-typewriter font-semibold text-sepia-800 uppercase tracking-wider mb-2">Audio Sketchpad</h4>
             {section.audio ? (
                 <div className="flex items-center gap-2">
                     <audio src={section.audio.blobUrl} controls className="w-full h-8" />
@@ -239,7 +240,7 @@ const MelodySketchpad: React.FC<{
                         </button>
                     ) : (
                         <button onClick={handleStartRecording} className={`w-full ${secondaryButtonClasses} justify-center flex items-center gap-1.5`}>
-                            <MicrophoneIcon className="w-5 h-5 text-sepia-800" /> Record Melody Idea
+                            <MicrophoneIcon className="w-5 h-5 text-sepia-800" /> Record Audio Idea
                         </button>
                     )}
                 </div>
@@ -249,7 +250,7 @@ const MelodySketchpad: React.FC<{
 };
 
 
-export const Editor: React.FC<EditorProps> = ({ activeSection, onAddContentPart, onUpdateContentPart, onDeleteContentPart, onCowrite, onModifyLyric, onUpdateAudio, onDeleteAudio, onAnalyzeAudio, lyricSuggestions }) => {
+const EditorComponent: React.FC<EditorProps> = ({ activeSection, onAddContentPart, onUpdateContentPart, onDeleteContentPart, onCowrite, onModifyLyric, onUpdateAudio, onDeleteAudio, onAnalyzeAudio, lyricSuggestions }) => {
     const [userText, setUserText] = useState('');
     const endOfMessagesRef = useRef<HTMLDivElement>(null);
     const [editingPartId, setEditingPartId] = useState<string | null>(null);
@@ -331,7 +332,7 @@ export const Editor: React.FC<EditorProps> = ({ activeSection, onAddContentPart,
 
             {activeSection && (
                 <>
-                    <MelodySketchpad 
+                    <AudioRecorder 
                         section={activeSection} 
                         onUpdateAudio={onUpdateAudio} 
                         onDeleteAudio={onDeleteAudio}
@@ -359,3 +360,5 @@ export const Editor: React.FC<EditorProps> = ({ activeSection, onAddContentPart,
         </div>
     );
 };
+
+export const Editor = memo(EditorComponent);

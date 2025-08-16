@@ -1,4 +1,5 @@
-import React from 'react';
+
+import React, { memo } from 'react';
 import type { SongData, Chord, MelodyNote, ProgressionStep, GenerateIdeaParams, GenerateBlendedIdeaParams, GenerateRhymesParams, GenerateSynonymsParams, GenerateWordAssociationsParams, GetInspirationalSparkParams, GenerateTitleParams, GenerateEmotionalPaletteParams, GenerateObjectObservationParams, AnalysisType } from '../types';
 import { Accordion } from './Accordion';
 import { MusicPanel } from './panels/MusicPanel';
@@ -44,7 +45,7 @@ interface SidebarProps {
     onApplyStructure: (structure: string) => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = (props) => {
+const SidebarComponent: React.FC<SidebarProps> = (props) => {
     return (
         <div className="bg-cream-100/50 h-full flex flex-col overflow-y-auto">
             <Accordion allowMultipleOpen={false} defaultOpenIndex={0}>
@@ -100,3 +101,5 @@ export const Sidebar: React.FC<SidebarProps> = (props) => {
         </div>
     );
 };
+
+export const Sidebar = memo(SidebarComponent);

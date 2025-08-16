@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, memo } from 'react';
 import type { Chord, ProgressionStep } from '../types';
 import { MUSICAL_KEYS, CHORD_FUNCTION_COLORS } from '../constants';
 import { TrashIcon, PlusIcon, MinusIcon } from './icons';
@@ -18,7 +19,7 @@ const ChordBlock: React.FC<{
     isDraggable?: boolean; 
     onDragStart?: (e: React.DragEvent, chord: Chord) => void; 
     onUpdateDuration?: (newDuration: number) => void;
-}> = ({ step, chord, isDraggable = false, onDragStart, onUpdateDuration }) => {
+}> = memo(({ step, chord, isDraggable = false, onDragStart, onUpdateDuration }) => {
     const colorClass = CHORD_FUNCTION_COLORS[chord.function] || CHORD_FUNCTION_COLORS['other'];
     
     return (
@@ -37,9 +38,9 @@ const ChordBlock: React.FC<{
             )}
         </div>
     );
-};
+});
 
-export const ChordRiver: React.FC<ChordRiverProps> = ({ library, progression, currentKey, onUpdateProgression, onUpdateProgressionStep, onGenerateLibrary }) => {
+const ChordRiverComponent: React.FC<ChordRiverProps> = ({ library, progression, currentKey, onUpdateProgression, onUpdateProgressionStep, onGenerateLibrary }) => {
     const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
     const handleKeyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -149,3 +150,5 @@ export const ChordRiver: React.FC<ChordRiverProps> = ({ library, progression, cu
         </div>
     );
 };
+
+export const ChordRiver = memo(ChordRiverComponent);

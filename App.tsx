@@ -165,6 +165,21 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
     });
 };
 
+function useDebounce<T>(value: T, delay: number): T {
+    const [debouncedValue, setDebouncedValue] = useState<T>(value);
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedValue(value);
+        }, delay);
+
+        return () => {
+            clearTimeout(handler);
+        };
+    }, [value, delay]);
+    return debouncedValue;
+}
+
+
 const App: React.FC = () => {
     const [songData, setSongData] = useState<SongData>(getInitialSongData);
     const [activeSectionId, setActiveSectionId] = useState<string | null>(songData.structure.length > 0 ? songData.structure[0].id : null);
@@ -198,12 +213,15 @@ const App: React.FC = () => {
 
     const activeSection = songData.structure.find(s => s.id === activeSectionId);
     
+    // Debounce song data for auto-saving
+    const debouncedSongData = useDebounce(songData, 500);
+    
     // Auto-save to local storage
     useEffect(() => {
         try {
             const storableData: SongData = {
-                ...songData,
-                structure: songData.structure.map(section => {
+                ...debouncedSongData,
+                structure: debouncedSongData.structure.map(section => {
                     if (!section.audio) return section;
                     const { blobUrl, ...storableAudio } = section.audio;
                     return { ...section, audio: storableAudio };
@@ -214,7 +232,7 @@ const App: React.FC = () => {
         } catch (e) {
             console.error("Could not save song to local storage", e);
         }
-    }, [songData]);
+    }, [debouncedSongData]);
 
 
     const handleError = useCallback((err: unknown) => {
@@ -248,11 +266,11 @@ const App: React.FC = () => {
     }, [handleError]);
 
     // --- Structure & Content Handlers ---
-    const handleUpdateTitle = (newTitle: string) => {
+    const handleUpdateTitle = useCallback((newTitle: string) => {
         setSongData(prev => ({ ...prev, title: newTitle.trim() || 'Untitled Song' }));
-    };
+    }, []);
 
-    const handleAddContentPart = (sectionId: string, author: Author, text: string) => {
+    const handleAddContentPart = useCallback((sectionId: string, author: Author, text: string) => {
         if (!text.trim()) return;
         const newPart: ContentPart = {
             id: `part-${Date.now()}`,
@@ -263,9 +281,9 @@ const App: React.FC = () => {
             ...prev,
             structure: prev.structure.map(s => s.id === sectionId ? { ...s, content: [...s.content, newPart] } : s)
         }));
-    };
+    }, []);
     
-    const handleUpdateContentPart = (sectionId: string, partId: string, newText: string) => {
+    const handleUpdateContentPart = useCallback((sectionId: string, partId: string, newText: string) => {
         setSongData(prev => ({
             ...prev,
             structure: prev.structure.map(s => 
@@ -277,28 +295,30 @@ const App: React.FC = () => {
         if (lyricSuggestions?.partId === partId) {
             setLyricSuggestions(null);
         }
-    };
+    }, [lyricSuggestions?.partId]);
 
-    const handleDeleteContentPart = (sectionId: string, partId: string) => {
+    const handleDeleteContentPart = useCallback((sectionId: string, partId: string) => {
         setSongData(prev => ({
             ...prev,
             structure: prev.structure.map(s => s.id === sectionId ? { ...s, content: s.content.filter(p => p.id !== partId) } : s)
         }));
-    };
+    }, []);
 
-    const handleAddSection = (type: SectionType) => {
-        const existingOfType = songData.structure.filter(s => s.type === type).length;
-        const newSection: SongSection = {
-            id: `section-${Date.now()}`,
-            type,
-            label: `${type} ${existingOfType + 1}`,
-            content: [],
-        };
-        setSongData(prev => ({...prev, structure: [...prev.structure, newSection]}));
-        setActiveSectionId(newSection.id);
-    };
+    const handleAddSection = useCallback((type: SectionType) => {
+        setSongData(prev => {
+            const existingOfType = prev.structure.filter(s => s.type === type).length;
+            const newSection: SongSection = {
+                id: `section-${Date.now()}`,
+                type,
+                label: `${type} ${existingOfType + 1}`,
+                content: [],
+            };
+            setActiveSectionId(newSection.id);
+            return {...prev, structure: [...prev.structure, newSection]};
+        });
+    }, []);
 
-    const handleDeleteSection = (sectionId: string) => {
+    const handleDeleteSection = useCallback((sectionId: string) => {
         setSongData(prev => {
             const newStructure = prev.structure.filter(s => s.id !== sectionId);
             if (activeSectionId === sectionId) {
@@ -306,9 +326,9 @@ const App: React.FC = () => {
             }
             return {...prev, structure: newStructure};
         });
-    };
+    }, [activeSectionId]);
     
-    const handleUpdateSection = (sectionId: string, updates: { type: SectionType, label: string }) => {
+    const handleUpdateSection = useCallback((sectionId: string, updates: { type: SectionType, label: string }) => {
         setSongData(prev => ({
             ...prev,
             structure: prev.structure.map(s => 
@@ -317,18 +337,18 @@ const App: React.FC = () => {
                 : s
             )
         }));
-    };
+    }, []);
 
-    const handleReorderSections = (startIndex: number, endIndex: number) => {
+    const handleReorderSections = useCallback((startIndex: number, endIndex: number) => {
         setSongData(prev => {
             const result = Array.from(prev.structure);
             const [removed] = result.splice(startIndex, 1);
             result.splice(endIndex, 0, removed);
             return {...prev, structure: result};
         });
-    };
+    }, []);
     
-    const handleApplyStructure = withLoading(async (structureString: string) => {
+    const handleApplyStructure = useCallback(withLoading(async (structureString: string) => {
         const sectionTypes = structureString.split(',').map(s => s.trim() as SectionType);
         const typeCounts: { [key: string]: number } = {};
 
@@ -343,31 +363,31 @@ const App: React.FC = () => {
         });
         setSongData(prev => ({...prev, structure: newStructure}));
         setActiveSectionId(newStructure.length > 0 ? newStructure[0].id : null);
-    });
+    }), [withLoading]);
     
 
-    const handleFindRhymes = withLoading(async (params: GenerateRhymesParams) => {
+    const handleFindRhymes = useCallback(withLoading(async (params: GenerateRhymesParams) => {
         if (!params.word.trim()) return;
         const results = await geminiService.findRhymes(params);
         setRhymes(results);
         setGeneratedIdea(null); // Clear other results
-    });
+    }), [withLoading]);
     
-    const handleFindSynonyms = withLoading(async (params: GenerateSynonymsParams) => {
+    const handleFindSynonyms = useCallback(withLoading(async (params: GenerateSynonymsParams) => {
         if (!params.word.trim()) return;
         const results = await geminiService.findSynonyms(params);
         setSynonyms(results);
         setGeneratedIdea(null);
-    });
+    }), [withLoading]);
 
-    const handleGenerateWordAssociations = withLoading(async (params: GenerateWordAssociationsParams) => {
+    const handleGenerateWordAssociations = useCallback(withLoading(async (params: GenerateWordAssociationsParams) => {
         if (!params.word.trim()) return;
         const results = await geminiService.generateWordAssociations(params);
         setWordAssociations(results);
         setGeneratedIdea(null);
-    });
+    }), [withLoading]);
 
-    const handleCowrite = withLoading(async (sectionId: string, prompt: string) => {
+    const handleCowrite = useCallback(withLoading(async (sectionId: string, prompt: string) => {
         const section = songData.structure.find(s => s.id === sectionId);
         if (!section) return;
         if (!prompt.trim()) {
@@ -377,9 +397,9 @@ const App: React.FC = () => {
         const existingLyrics = section.content.map(p => p.text).join('\n\n');
         const newLines = await geminiService.cowriteSection(prompt, existingLyrics);
         handleAddContentPart(sectionId, 'ai', newLines);
-    });
+    }), [withLoading, songData.structure, handleAddContentPart]);
 
-    const handleModifyLyric = withLoading(async (sectionId: string, partId: string, params: ModifyLyricParams) => {
+    const handleModifyLyric = useCallback(withLoading(async (sectionId: string, partId: string, params: ModifyLyricParams) => {
         setLyricSuggestions(null);
         if (params.modificationType !== 'random_line' && !params.line.trim()) {
             setError("There is no lyric to modify. Please type something first.");
@@ -391,9 +411,9 @@ const App: React.FC = () => {
         } else if (typeof result === 'string') {
             handleUpdateContentPart(sectionId, partId, result);
         }
-    });
+    }), [withLoading, handleUpdateContentPart]);
 
-    const handleGenerateIdea = withLoading(async (params: GenerateIdeaParams) => {
+    const handleGenerateIdea = useCallback(withLoading(async (params: GenerateIdeaParams) => {
         if (!params.topic.trim()) {
             setError("Please enter a topic for the song idea.");
             return;
@@ -401,9 +421,9 @@ const App: React.FC = () => {
         const idea = await geminiService.generateSongIdea(params);
         setGeneratedIdea(idea);
         setIsIdeaModalOpen(true);
-    });
+    }), [withLoading]);
 
-    const handleGenerateBlendedIdea = withLoading(async (params: GenerateBlendedIdeaParams) => {
+    const handleGenerateBlendedIdea = useCallback(withLoading(async (params: GenerateBlendedIdeaParams) => {
         if (!params.artists.trim()) {
             setError("Please enter at least one artist to blend styles.");
             return;
@@ -411,49 +431,49 @@ const App: React.FC = () => {
         const idea = await geminiService.generateBlendedIdea(params);
         setGeneratedIdea(idea);
         setIsIdeaModalOpen(true);
-    });
+    }), [withLoading]);
     
-    const handleGenerateTitles = withLoading(async (params: GenerateTitleParams) => {
+    const handleGenerateTitles = useCallback(withLoading(async (params: GenerateTitleParams) => {
         if (!params.theme.trim()) return;
         const titles = await geminiService.generateTitles(params);
         setGeneratedIdea(`Suggested Titles for "${params.theme}":\n\n- ${titles.join('\n- ')}`);
         setIsIdeaModalOpen(true);
-    });
+    }), [withLoading]);
     
-    const handleGenerateEmotionalPalette = withLoading(async (params: GenerateEmotionalPaletteParams) => {
+    const handleGenerateEmotionalPalette = useCallback(withLoading(async (params: GenerateEmotionalPaletteParams) => {
         if (params.emotions.length === 0) return;
         const scene = await geminiService.generateEmotionalPaletteScene(params);
         setGeneratedIdea(`Scene for "${params.emotions.join(', ')}":\n\n${scene}`);
         setIsIdeaModalOpen(true);
-    });
+    }), [withLoading]);
     
-    const handleGenerateObjectObservation = withLoading(async (params: GenerateObjectObservationParams) => {
+    const handleGenerateObjectObservation = useCallback(withLoading(async (params: GenerateObjectObservationParams) => {
         if (!params.object.trim()) return;
         const observation = await geminiService.generateObjectObservation(params);
         setGeneratedIdea(`Observation of "${params.object}":\n\n${observation}`);
         setIsIdeaModalOpen(true);
-    });
+    }), [withLoading]);
 
-    const handleGeneratePrompt = withLoading(async () => {
+    const handleGeneratePrompt = useCallback(withLoading(async () => {
         const prompt = await geminiService.generateCreativePrompt();
         setCreativePrompt(prompt);
-    });
+    }), [withLoading]);
 
-    const handleGetInspirationalSpark = withLoading(async (params: GetInspirationalSparkParams) => {
+    const handleGetInspirationalSpark = useCallback(withLoading(async (params: GetInspirationalSparkParams) => {
         const spark = await geminiService.getInspirationalSpark(params);
         setInspirationalSpark(spark);
-    });
+    }), [withLoading]);
 
-    const handleSuggestStructures = withLoading(async () => {
+    const handleSuggestStructures = useCallback(withLoading(async () => {
         const structures = await geminiService.suggestSongStructures();
         setStructureSuggestions(structures);
-    });
+    }), [withLoading]);
     
-    const handleAnalyzeSong = withLoading(async (analysisType: AnalysisType) => {
+    const handleAnalyzeSong = useCallback(withLoading(async (analysisType: AnalysisType) => {
         const analysis = await geminiService.analyzeSong({ structure: songData.structure, progression: songData.progression, analysisType });
         setSongAnalysis(analysis);
         setIsAnalysisModalOpen(true);
-    });
+    }), [withLoading, songData.structure, songData.progression]);
     
     // --- Audio Handlers ---
     const handleUpdateAudio = useCallback(async (sectionId: string, audioBlob: Blob) => {
@@ -485,20 +505,20 @@ const App: React.FC = () => {
         }));
     }, []);
 
-    const handleAnalyzeAudio = withLoading(async (sectionId: string) => {
+    const handleAnalyzeAudio = useCallback(withLoading(async (sectionId: string) => {
         const section = songData.structure.find(s => s.id === sectionId);
         if (!section || !section.audio) return;
         const result = await geminiService.analyzeAudioPart(section.audio.base64, section.audio.mimeType);
         setSongAnalysis(result);
         setIsAnalysisModalOpen(true);
-    });
+    }), [withLoading, songData.structure]);
 
     // --- Music & Playback Handlers ---
     const handleGenerateLibrary = useCallback(withLoading(async (key: string) => {
         const chords = await geminiService.getChordLibrary({ key });
         setChordLibrary(chords);
         setSongData(prev => ({ ...prev, key }));
-    }), []);
+    }), [withLoading]);
 
     useEffect(() => {
         if (chordLibrary.length === 0 && songData.key) {
@@ -506,28 +526,28 @@ const App: React.FC = () => {
         }
     }, [songData.key, chordLibrary.length, handleGenerateLibrary]);
 
-    const handleUpdateProgression = (newProgression: ProgressionStep[]) => {
+    const handleUpdateProgression = useCallback((newProgression: ProgressionStep[]) => {
         setSongData(prev => ({ ...prev, progression: newProgression }));
-    };
+    }, []);
     
-    const handleUpdateProgressionStep = (id: string, updates: { durationBeats: number }) => {
+    const handleUpdateProgressionStep = useCallback((id: string, updates: { durationBeats: number }) => {
         setSongData(prev => ({
             ...prev,
             progression: prev.progression.map(step => step.id === id ? { ...step, ...updates } : step)
         }))
-    };
+    }, []);
 
-    const handleUpdateBpm = (newBpm: number) => {
+    const handleUpdateBpm = useCallback((newBpm: number) => {
         setSongData(prev => ({ ...prev, bpm: newBpm }));
-    };
+    }, []);
 
-    const handleUpdateTimeSignature = (newTimeSignature: string) => {
+    const handleUpdateTimeSignature = useCallback((newTimeSignature: string) => {
         setSongData(prev => ({ ...prev, timeSignature: newTimeSignature }));
-    };
+    }, []);
 
-    const handleUpdateMelody = (newMelody: MelodyNote[]) => {
+    const handleUpdateMelody = useCallback((newMelody: MelodyNote[]) => {
         setSongData(prev => ({ ...prev, melody: newMelody }));
-    };
+    }, []);
 
     const animationLoop = useCallback(() => {
         const currentTime = performance.now();
@@ -539,24 +559,24 @@ const App: React.FC = () => {
         animationFrameRef.current = requestAnimationFrame(animationLoop);
     }, [songData.bpm, songData.progression]);
 
-    const handlePlay = () => {
+    const handlePlay = useCallback(() => {
         audioService.play(songData);
         setIsPlaying(true);
         playbackStartTimeRef.current = performance.now();
         animationFrameRef.current = requestAnimationFrame(animationLoop);
-    };
+    }, [songData, animationLoop]);
 
-    const handleStop = () => {
+    const handleStop = useCallback(() => {
         audioService.stop();
         setIsPlaying(false);
         if (animationFrameRef.current) {
             cancelAnimationFrame(animationFrameRef.current);
         }
         setPlayheadPosition(0);
-    };
+    }, []);
 
     // --- Project Handlers ---
-    const handleNewSong = () => {
+    const handleNewSong = useCallback(() => {
         if (window.confirm("Are you sure? This will create a blank song and erase your current work from this browser session.")) {
             localStorage.removeItem('sonora-ai-song');
             setSongData({
@@ -571,9 +591,9 @@ const App: React.FC = () => {
             setActiveSectionId(null);
             handleGenerateLibrary('C');
         }
-    };
+    }, [handleGenerateLibrary]);
     
-    const handleExport = () => {
+    const handleExport = useCallback(() => {
         const { title, structure, progression, key, bpm, timeSignature } = songData;
         
         let content = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${title}</title><style>body{font-family:serif;line-height:1.6;color:#3a3127;background:#f5f3f0;padding:2rem;}h1{color:#a33100;}h2{color:#115e59;border-bottom:1px solid #e5e2de;padding-bottom:0.5rem;}.metadata{background:#fffffb;border:1px solid #e5e2de;padding:1rem;margin-bottom:2rem;}.lyrics{white-space:pre-wrap;}</style></head><body><h1>${title}</h1><div class="metadata"><strong>Key:</strong> ${key} | <strong>BPM:</strong> ${bpm} | <strong>Time Signature:</strong> ${timeSignature}<br><strong>Progression:</strong> ${progression.map(p => `${p.chord.name} (${p.durationBeats} beats)`).join(' - ') || 'N/A'}</div>`;
@@ -590,9 +610,9 @@ const App: React.FC = () => {
         a.download = `${title.replace(/\s/g, '_')}.html`;
         a.click();
         URL.revokeObjectURL(url);
-    };
+    }, [songData]);
 
-    const handleShare = async (): Promise<boolean> => {
+    const handleShare = useCallback(async (): Promise<boolean> => {
         try {
             const storableData: Partial<SongData> = {
                 ...songData,
@@ -612,7 +632,7 @@ const App: React.FC = () => {
             setError("Could not copy the share link.");
             return false;
         }
-    };
+    }, [songData]);
 
     const getGridCols = () => {
         if (isStructurePanelOpen && isToolsPanelOpen) return 'grid-cols-[3fr_6fr_3fr]';
