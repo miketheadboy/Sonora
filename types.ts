@@ -1,9 +1,22 @@
+
 export interface GenerateIdeaParams {
     topic: string;
 }
 
 export interface GenerateBlendedIdeaParams {
     artists: string;
+}
+
+export interface GenerateTitleParams {
+    theme: string;
+}
+
+export interface GenerateEmotionalPaletteParams {
+    emotions: string[];
+}
+
+export interface GenerateObjectObservationParams {
+    object: string;
 }
 
 export interface GenerateRhymesParams {
@@ -29,22 +42,16 @@ export interface Chord {
     function: ChordFunction;
 }
 
+export interface ProgressionStep {
+    id: string;
+    chord: Chord;
+    durationBeats: number;
+}
+
 export interface ChordProgression {
     part: string;
     progression: string;
     chords: string;
-    description: string;
-}
-
-export interface GenerateRhythmParams {
-    line: string;
-}
-
-export interface RhythmSuggestion {
-    meter: string;
-    name: string;
-    pattern: string;
-    formattedLine: string;
     description: string;
 }
 
@@ -59,7 +66,7 @@ export interface ContentPart {
 }
 
 export interface SongSection {
-    id: string;
+    id:string;
     type: SectionType;
     label: string;
     content: ContentPart[];
@@ -70,9 +77,12 @@ export interface SongSection {
     };
 }
 
+export type AnalysisType = 'song_doctor' | 'rhyme_analyzer' | 'repetition_analyzer';
+
 export interface AnalyzeSongParams {
     structure: SongSection[];
-    progression: Chord[];
+    progression: ProgressionStep[];
+    analysisType: AnalysisType;
 }
 
 export interface AudioAnalysisResult {
@@ -85,14 +95,35 @@ export interface AudioAnalysisResult {
     chordSuggestion: string;
 }
 
-export interface SongData {
-    structure: SongSection[];
-    progression: Chord[];
-    key: string;
+export interface MelodyNote {
+    pitch: string; // e.g., 'C5'
+    startBeat: number; // e.g., 0, 0.5, 1
+    durationBeats: number; // e.g., 0.5, 1
 }
+
+export interface SongData {
+    title: string;
+    structure: SongSection[];
+    progression: ProgressionStep[];
+    key: string;
+    bpm: number;
+    timeSignature: string; // "4/4", "3/4"
+    melody: MelodyNote[];
+}
+
 
 export type InspirationSource = 'poet' | 'artist' | 'philosopher';
 
 export interface GetInspirationalSparkParams {
     sourceType: InspirationSource;
 }
+
+export type LyricModificationType = 'refine' | 'replace' | 'suggest_alternatives' | 'random_line';
+
+export interface ModifyLyricParams {
+    line: string;
+    context: string;
+    modificationType: LyricModificationType;
+}
+
+export type RhythmPattern = number[];

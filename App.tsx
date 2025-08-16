@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { Editor } from './components/Editor';
 import { Sidebar } from './components/Sidebar';
@@ -9,7 +9,7 @@ import { ErrorDisplay } from './components/ErrorDisplay';
 import { SongStructureEditor } from './components/SongStructureEditor';
 import { geminiService } from './services/geminiService';
 import { audioService } from './services/audioService';
-import type { GenerateIdeaParams, GenerateRhymesParams, GenerateSynonymsParams, GenerateWordAssociationsParams, RhythmSuggestion, GenerateRhythmParams, GenerateBlendedIdeaParams, Chord, SongSection, SectionType, ContentPart, Author, AudioAnalysisResult, SongData, GetInspirationalSparkParams } from './types';
+import type { GenerateIdeaParams, GenerateRhymesParams, GenerateSynonymsParams, GenerateWordAssociationsParams, GenerateBlendedIdeaParams, Chord, SongSection, SectionType, ContentPart, Author, AudioAnalysisResult, SongData, GetInspirationalSparkParams, ModifyLyricParams, MelodyNote, ProgressionStep, GenerateTitleParams, AnalysisType, GenerateEmotionalPaletteParams, GenerateObjectObservationParams } from './types';
 
 const initialLyrics = `(Verse 1)
 White walls and carbon paper lines
@@ -87,9 +87,20 @@ const parseLyricsToStructure = (lyrics: string): SongSection[] => {
     return sections;
 };
 
-const processLoadedSongData = (data: SongData): SongData => {
+const getDefaultSongData = (): SongData => ({
+    title: 'A Wild Design',
+    structure: parseLyricsToStructure(initialLyrics),
+    progression: [],
+    key: 'C',
+    bpm: 120,
+    timeSignature: '4/4',
+    melody: [],
+});
+
+
+const processLoadedSongData = (data: Partial<SongData>): SongData => {
     // Recreate blobUrls from base64 data for audio playback
-    const hydratedStructure = data.structure.map(section => {
+    const hydratedStructure = data.structure?.map(section => {
         if (section.audio?.base64 && section.audio?.mimeType) {
             const blob = base64ToBlob(section.audio.base64, section.audio.mimeType);
             return {
@@ -101,8 +112,14 @@ const processLoadedSongData = (data: SongData): SongData => {
             };
         }
         return section;
-    });
-    return { ...data, structure: hydratedStructure };
+    }) || [];
+
+    // Merge loaded data with defaults to ensure all fields are present
+    return {
+        ...getDefaultSongData(),
+        ...data,
+        structure: hydratedStructure,
+    };
 };
 
 const getInitialSongData = (): SongData => {
@@ -112,10 +129,8 @@ const getInitialSongData = (): SongData => {
         try {
             const base64Data = hash.substring(6);
             const jsonData = new TextDecoder().decode(base64ToBytes(base64Data));
-            const parsedData = JSON.parse(jsonData);
-            if (Array.isArray(parsedData.structure) && Array.isArray(parsedData.progression) && typeof parsedData.key === 'string') {
-                return processLoadedSongData(parsedData);
-            }
+            const parsedData = JSON.parse(jsonData) as Partial<SongData>;
+            return processLoadedSongData(parsedData);
         } catch (e) {
             console.error("Failed to parse shared data, falling back.", e);
         }
@@ -125,21 +140,15 @@ const getInitialSongData = (): SongData => {
     const savedData = localStorage.getItem('sonora-ai-song');
     if (savedData) {
         try {
-            const parsedData = JSON.parse(savedData);
-            if (Array.isArray(parsedData.structure) && Array.isArray(parsedData.progression) && typeof parsedData.key === 'string') {
-                return processLoadedSongData(parsedData);
-            }
+            const parsedData = JSON.parse(savedData) as Partial<SongData>;
+            return processLoadedSongData(parsedData);
         } catch (e) {
             console.error("Failed to parse saved data, falling back.", e);
         }
     }
 
     // 3. Fallback to initial default data
-    return {
-        structure: parseLyricsToStructure(initialLyrics),
-        progression: [],
-        key: 'C'
-    };
+    return getDefaultSongData();
 };
 
 
@@ -158,36 +167,43 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
 const App: React.FC = () => {
     const [songData, setSongData] = useState<SongData>(getInitialSongData);
     const [activeSectionId, setActiveSectionId] = useState<string | null>(songData.structure.length > 0 ? songData.structure[0].id : null);
+    
+    // UI State
     const [isStructurePanelOpen, setIsStructurePanelOpen] = useState(true);
+    const [isToolsPanelOpen, setIsToolsPanelOpen] = useState(true);
 
+    // AI/Loading State
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-
     const [rhymes, setRhymes] = useState<string[]>([]);
     const [synonyms, setSynonyms] = useState<string[]>([]);
     const [wordAssociations, setWordAssociations] = useState<string[]>([]);
     const [creativePrompt, setCreativePrompt] = useState<string | null>(null);
     const [inspirationalSpark, setInspirationalSpark] = useState<string | null>(null);
-    const [rhythmSuggestions, setRhythmSuggestions] = useState<RhythmSuggestion[]>([]);
     const [structureSuggestions, setStructureSuggestions] = useState<string[]>([]);
     const [generatedIdea, setGeneratedIdea] = useState<string | null>(null);
     const [isIdeaModalOpen, setIsIdeaModalOpen] = useState(false);
     const [songAnalysis, setSongAnalysis] = useState<string | AudioAnalysisResult | null>(null);
     const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
-    
+    const [lyricSuggestions, setLyricSuggestions] = useState<{ partId: string, suggestions: string[] } | null>(null);
     const [chordLibrary, setChordLibrary] = useState<Chord[]>([]);
+    
+    // Playback State
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [playheadPosition, setPlayheadPosition] = useState(0); // Position in beats
+    const animationFrameRef = useRef<number>();
+    const playbackStartTimeRef = useRef<number>(0);
+
 
     const activeSection = songData.structure.find(s => s.id === activeSectionId);
     
     // Auto-save to local storage
     useEffect(() => {
         try {
-            // Create a storable version of songData, removing blobUrls which cannot be stored
             const storableData: SongData = {
                 ...songData,
                 structure: songData.structure.map(section => {
                     if (!section.audio) return section;
-                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
                     const { blobUrl, ...storableAudio } = section.audio;
                     return { ...section, audio: storableAudio };
                 }),
@@ -200,34 +216,41 @@ const App: React.FC = () => {
     }, [songData]);
 
 
-    const handleError = (err: unknown) => {
+    const handleError = useCallback((err: unknown) => {
         let friendlyMessage = "An unknown error occurred. Please check the console for details.";
         if (err instanceof Error) {
-            // The GenAI library often wraps API errors in a message that is a JSON string.
-            try {
-                const errorObj = JSON.parse(err.message);
-                if (errorObj.error && errorObj.error.message) {
-                    friendlyMessage = errorObj.error.message;
-                } else {
-                    friendlyMessage = err.message;
-                }
-            } catch (e) {
-                // If it's not JSON, it's a regular error message.
-                friendlyMessage = err.message;
+            if (err.message.includes("API key is missing")) {
+                friendlyMessage = "The provided API key is not valid. Please ensure the API_KEY environment variable is set correctly.";
+            } else {
+                 friendlyMessage = err.message;
             }
         }
-        
-        // Specifically guide the user if it's an API key issue.
-        if (friendlyMessage.includes("API key not valid")) {
-            friendlyMessage = "The provided API key is not valid. Please ensure the API_KEY environment variable is set correctly.";
-        }
-    
         console.error(err);
         setError(`AI Error: ${friendlyMessage}`);
         audioService.stop();
-    };
+        setIsPlaying(false);
+    }, []);
     
+    // --- AI & Tool Handlers ---
+    const withLoading = useCallback(<T extends any[]>(fn: (...args: T) => Promise<void>) => {
+        return async (...args: T) => {
+            setIsLoading(true);
+            setError(null);
+            try {
+                await fn(...args);
+            } catch (err) {
+                handleError(err);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+    }, [handleError]);
+
     // --- Structure & Content Handlers ---
+    const handleUpdateTitle = (newTitle: string) => {
+        setSongData(prev => ({ ...prev, title: newTitle.trim() || 'Untitled Song' }));
+    };
+
     const handleAddContentPart = (sectionId: string, author: Author, text: string) => {
         if (!text.trim()) return;
         const newPart: ContentPart = {
@@ -241,6 +264,20 @@ const App: React.FC = () => {
         }));
     };
     
+    const handleUpdateContentPart = (sectionId: string, partId: string, newText: string) => {
+        setSongData(prev => ({
+            ...prev,
+            structure: prev.structure.map(s => 
+                s.id === sectionId 
+                ? { ...s, content: s.content.map(p => p.id === partId ? { ...p, text: newText } : p) } 
+                : s
+            )
+        }));
+        if (lyricSuggestions?.partId === partId) {
+            setLyricSuggestions(null);
+        }
+    };
+
     const handleDeleteContentPart = (sectionId: string, partId: string) => {
         setSongData(prev => ({
             ...prev,
@@ -290,7 +327,7 @@ const App: React.FC = () => {
         });
     };
     
-    const handleApplyStructure = (structureString: string) => {
+    const handleApplyStructure = withLoading(async (structureString: string) => {
         const sectionTypes = structureString.split(',').map(s => s.trim() as SectionType);
         const typeCounts: { [key: string]: number } = {};
 
@@ -305,357 +342,314 @@ const App: React.FC = () => {
         });
         setSongData(prev => ({...prev, structure: newStructure}));
         setActiveSectionId(newStructure.length > 0 ? newStructure[0].id : null);
-    };
+    });
+    
 
+    const handleFindRhymes = withLoading(async (params: GenerateRhymesParams) => {
+        if (!params.word.trim()) return;
+        const results = await geminiService.findRhymes(params);
+        setRhymes(results);
+        setGeneratedIdea(null); // Clear other results
+    });
+    
+    const handleFindSynonyms = withLoading(async (params: GenerateSynonymsParams) => {
+        if (!params.word.trim()) return;
+        const results = await geminiService.findSynonyms(params);
+        setSynonyms(results);
+        setGeneratedIdea(null);
+    });
+
+    const handleGenerateWordAssociations = withLoading(async (params: GenerateWordAssociationsParams) => {
+        if (!params.word.trim()) return;
+        const results = await geminiService.generateWordAssociations(params);
+        setWordAssociations(results);
+        setGeneratedIdea(null);
+    });
+
+    const handleCowrite = withLoading(async (sectionId: string, prompt: string) => {
+        const section = songData.structure.find(s => s.id === sectionId);
+        if (!section) return;
+        const existingLyrics = section.content.map(p => p.text).join('\n\n');
+        const newLines = await geminiService.cowriteSection(prompt, existingLyrics);
+        handleAddContentPart(sectionId, 'ai', newLines);
+    });
+
+    const handleModifyLyric = withLoading(async (sectionId: string, partId: string, params: ModifyLyricParams) => {
+        setLyricSuggestions(null);
+        const result = await geminiService.modifyLyric(params);
+        if (params.modificationType === 'suggest_alternatives' && Array.isArray(result)) {
+            setLyricSuggestions({ partId, suggestions: result });
+        } else if (typeof result === 'string') {
+            handleUpdateContentPart(sectionId, partId, result);
+        }
+    });
+
+    const handleGenerateIdea = withLoading(async (params: GenerateIdeaParams) => {
+        const idea = await geminiService.generateSongIdea(params);
+        setGeneratedIdea(idea);
+        setIsIdeaModalOpen(true);
+    });
+
+    const handleGenerateBlendedIdea = withLoading(async (params: GenerateBlendedIdeaParams) => {
+        const idea = await geminiService.generateBlendedIdea(params);
+        setGeneratedIdea(idea);
+        setIsIdeaModalOpen(true);
+    });
+    
+    const handleGenerateTitles = withLoading(async (params: GenerateTitleParams) => {
+        if (!params.theme.trim()) return;
+        const titles = await geminiService.generateTitles(params);
+        setGeneratedIdea(`Suggested Titles for "${params.theme}":\n\n- ${titles.join('\n- ')}`);
+        setIsIdeaModalOpen(true);
+    });
+    
+    const handleGenerateEmotionalPalette = withLoading(async (params: GenerateEmotionalPaletteParams) => {
+        if (params.emotions.length === 0) return;
+        const scene = await geminiService.generateEmotionalPaletteScene(params);
+        setGeneratedIdea(`Scene for "${params.emotions.join(', ')}":\n\n${scene}`);
+        setIsIdeaModalOpen(true);
+    });
+    
+    const handleGenerateObjectObservation = withLoading(async (params: GenerateObjectObservationParams) => {
+        if (!params.object.trim()) return;
+        const observation = await geminiService.generateObjectObservation(params);
+        setGeneratedIdea(`Observation of "${params.object}":\n\n${observation}`);
+        setIsIdeaModalOpen(true);
+    });
+
+    const handleGeneratePrompt = withLoading(async () => {
+        const prompt = await geminiService.generateCreativePrompt();
+        setCreativePrompt(prompt);
+    });
+
+    const handleGetInspirationalSpark = withLoading(async (params: GetInspirationalSparkParams) => {
+        const spark = await geminiService.getInspirationalSpark(params);
+        setInspirationalSpark(spark);
+    });
+
+    const handleSuggestStructures = withLoading(async () => {
+        const structures = await geminiService.suggestSongStructures();
+        setStructureSuggestions(structures);
+    });
+    
+    const handleAnalyzeSong = withLoading(async (analysisType: AnalysisType) => {
+        const analysis = await geminiService.analyzeSong({ structure: songData.structure, progression: songData.progression, analysisType });
+        setSongAnalysis(analysis);
+        setIsAnalysisModalOpen(true);
+    });
+    
     // --- Audio Handlers ---
-    const handleUpdateAudio = async (sectionId: string, audioBlob: Blob) => {
+    const handleUpdateAudio = useCallback(async (sectionId: string, audioBlob: Blob) => {
         const base64 = await blobToBase64(audioBlob);
-        const blobUrl = URL.createObjectURL(audioBlob);
+        const mimeType = audioBlob.type;
         setSongData(prev => ({
             ...prev,
             structure: prev.structure.map(s => 
                 s.id === sectionId 
-                ? { ...s, audio: { blobUrl, base64, mimeType: audioBlob.type } } 
+                ? { ...s, audio: { base64, mimeType, blobUrl: URL.createObjectURL(audioBlob) } } 
                 : s
             )
         }));
-    };
+    }, []);
 
-    const handleDeleteAudio = (sectionId: string) => {
+    const handleDeleteAudio = useCallback((sectionId: string) => {
         setSongData(prev => ({
             ...prev,
             structure: prev.structure.map(s => {
-                if (s.id === sectionId && s.audio) {
-                    URL.revokeObjectURL(s.audio.blobUrl);
-                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                if (s.id === sectionId) {
                     const { audio, ...rest } = s;
+                    if (audio?.blobUrl) {
+                        URL.revokeObjectURL(audio.blobUrl);
+                    }
                     return rest;
                 }
                 return s;
             })
         }));
-    };
-    
-    const handleAnalyzeAudio = useCallback(async (sectionId: string) => {
+    }, []);
+
+    const handleAnalyzeAudio = withLoading(async (sectionId: string) => {
         const section = songData.structure.find(s => s.id === sectionId);
         if (!section || !section.audio) return;
-        
-        setIsLoading(true);
-        setError(null);
-        try {
-            const result = await geminiService.analyzeAudioPart(section.audio.base64, section.audio.mimeType);
-            setSongAnalysis(result);
-            setIsAnalysisModalOpen(true);
-        } catch (err) {
-            handleError(err);
-        } finally {
-            setIsLoading(false);
-        }
-    }, [songData.structure]);
+        const result = await geminiService.analyzeAudioPart(section.audio.base64, section.audio.mimeType);
+        setSongAnalysis(result);
+        setIsAnalysisModalOpen(true);
+    });
 
-    // --- Gemini Service Handlers ---
-    const handleCowrite = useCallback(async (sectionId: string, prompt: string) => {
-        const section = songData.structure.find(s => s.id === sectionId);
-        if (!section) return;
-        setIsLoading(true);
-        setError(null);
-        try {
-            const currentContent = section.content.map(p => `${p.author}: ${p.text}`).join('\n');
-            const result = await geminiService.cowriteSection(prompt, currentContent);
-            handleAddContentPart(sectionId, 'ai', result);
-        } catch (err) {
-            handleError(err);
-        } finally {
-            setIsLoading(false);
-        }
-    }, [songData.structure]);
+    // --- Music & Playback Handlers ---
+    const handleGenerateLibrary = useCallback(withLoading(async (key: string) => {
+        const chords = await geminiService.getChordLibrary({ key });
+        setChordLibrary(chords);
+        setSongData(prev => ({ ...prev, key }));
+    }), []);
 
-    const handleGenerateIdea = useCallback(async (params: GenerateIdeaParams) => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            const result = await geminiService.generateSongIdea(params);
-            setGeneratedIdea(result);
-            setIsIdeaModalOpen(true);
-        } catch (err) {
-            handleError(err);
-        } finally {
-            setIsLoading(false);
+    useEffect(() => {
+        if (chordLibrary.length === 0 && songData.key) {
+            handleGenerateLibrary(songData.key);
         }
-    }, []);
+    }, [songData.key, chordLibrary.length, handleGenerateLibrary]);
 
-    const handleGenerateBlendedIdea = useCallback(async (params: GenerateBlendedIdeaParams) => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            const result = await geminiService.generateBlendedIdea(params);
-            setGeneratedIdea(result);
-            setIsIdeaModalOpen(true);
-        } catch (err) {
-            handleError(err);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
-
-    const handleFindRhymes = useCallback(async (params: GenerateRhymesParams) => {
-        setIsLoading(true);
-        setError(null);
-        setRhymes([]);
-        try {
-            const result = await geminiService.findRhymes(params);
-            setRhymes(result);
-        } catch (err) {
-            handleError(err);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
-
-    const handleFindSynonyms = useCallback(async (params: GenerateSynonymsParams) => {
-        setIsLoading(true);
-        setError(null);
-        setSynonyms([]);
-        try {
-            const result = await geminiService.findSynonyms(params);
-            setSynonyms(result);
-        } catch (err) {
-            handleError(err);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
-
-    const handleGenerateWordAssociations = useCallback(async (params: GenerateWordAssociationsParams) => {
-        setIsLoading(true);
-        setError(null);
-        setWordAssociations([]);
-        try {
-            const result = await geminiService.generateWordAssociations(params);
-            setWordAssociations(result);
-        } catch (err) {
-            handleError(err);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
-
-    const handleGeneratePrompt = useCallback(async () => {
-        setIsLoading(true);
-        setError(null);
-        setInspirationalSpark(null);
-        try {
-            const result = await geminiService.generateCreativePrompt();
-            setCreativePrompt(result);
-        } catch (err) {
-            handleError(err);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
+    const handleUpdateProgression = (newProgression: ProgressionStep[]) => {
+        setSongData(prev => ({ ...prev, progression: newProgression }));
+    };
     
-    const handleGetInspirationalSpark = useCallback(async (params: GetInspirationalSparkParams) => {
-        setIsLoading(true);
-        setError(null);
-        setCreativePrompt(null);
-        try {
-            const result = await geminiService.getInspirationalSpark(params);
-            setInspirationalSpark(result);
-        } catch (err) {
-            handleError(err);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
+    const handleUpdateProgressionStep = (id: string, updates: { durationBeats: number }) => {
+        setSongData(prev => ({
+            ...prev,
+            progression: prev.progression.map(step => step.id === id ? { ...step, ...updates } : step)
+        }))
+    };
 
-    const handleSuggestRhythms = useCallback(async (params: GenerateRhythmParams) => {
-        setIsLoading(true);
-        setError(null);
-        setRhythmSuggestions([]);
-        try {
-            const result = await geminiService.suggestRhythmPhrasings(params);
-            setRhythmSuggestions(result);
-        } catch (err) {
-            handleError(err);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
-    
-    const handleSuggestStructures = useCallback(async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            const result = await geminiService.suggestSongStructures();
-            setStructureSuggestions(result);
-        } catch (err) {
-            handleError(err);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
+    const handleUpdateBpm = (newBpm: number) => {
+        setSongData(prev => ({ ...prev, bpm: newBpm }));
+    };
 
-    const handleAnalyzeSong = useCallback(async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            const result = await geminiService.analyzeSong({
-                structure: songData.structure,
-                progression: songData.progression,
-            });
-            setSongAnalysis(result);
-            setIsAnalysisModalOpen(true);
-        } catch (err) {
-            handleError(err);
-        } finally {
-            setIsLoading(false);
+    const handleUpdateTimeSignature = (newTimeSignature: string) => {
+        setSongData(prev => ({ ...prev, timeSignature: newTimeSignature }));
+    };
+
+    const handleUpdateMelody = (newMelody: MelodyNote[]) => {
+        setSongData(prev => ({ ...prev, melody: newMelody }));
+    };
+
+    const animationLoop = useCallback(() => {
+        const currentTime = performance.now();
+        const elapsedSeconds = (currentTime - playbackStartTimeRef.current) / 1000;
+        const beatsPerSecond = songData.bpm / 60;
+        const totalProgressionBeats = songData.progression.reduce((sum, step) => sum + step.durationBeats, 0) || 16;
+        const currentBeat = (elapsedSeconds * beatsPerSecond) % totalProgressionBeats;
+        setPlayheadPosition(currentBeat);
+        animationFrameRef.current = requestAnimationFrame(animationLoop);
+    }, [songData.bpm, songData.progression]);
+
+    const handlePlay = () => {
+        audioService.play(songData);
+        setIsPlaying(true);
+        playbackStartTimeRef.current = performance.now();
+        animationFrameRef.current = requestAnimationFrame(animationLoop);
+    };
+
+    const handleStop = () => {
+        audioService.stop();
+        setIsPlaying(false);
+        if (animationFrameRef.current) {
+            cancelAnimationFrame(animationFrameRef.current);
         }
-    }, [songData]);
-
-    // --- Chord River Handlers ---
-    const handleUpdateProgression = useCallback((progression: Chord[]) => {
-        setSongData(prev => ({...prev, progression}));
-    }, []);
-
-    const handleGenerateLibrary = useCallback(async (key: string) => {
-        setIsLoading(true);
-        setError(null);
-        setSongData(prev => ({...prev, key}));
-        try {
-            const result = await geminiService.getChordLibrary({ key });
-            setChordLibrary(result);
-        } catch (err) {
-            handleError(err);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
-
-    const handlePlayProgression = useCallback(() => {
-        audioService.playProgression(songData.progression.map(c => c.name));
-    }, [songData.progression]);
+        setPlayheadPosition(0);
+    };
 
     // --- Project Handlers ---
     const handleNewSong = () => {
-        if (window.confirm("Are you sure you want to start a new song? Your current work will be cleared.")) {
+        if (window.confirm("Are you sure? This will create a blank song and erase your current work from this browser session.")) {
             localStorage.removeItem('sonora-ai-song');
-            const newSong: SongData = {
-                structure: [{
-                    id: `section-${Date.now()}`,
-                    type: 'Verse',
-                    label: 'Verse 1',
-                    content: [],
-                }],
+            setSongData({
+                title: 'Untitled Song',
+                structure: [],
                 progression: [],
-                key: 'C'
-            };
-            setSongData(newSong);
-            setActiveSectionId(newSong.structure[0].id);
-            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+                key: 'C',
+                bpm: 120,
+                timeSignature: '4/4',
+                melody: [],
+            });
+            setActiveSectionId(null);
+            handleGenerateLibrary('C');
         }
     };
     
     const handleExport = () => {
-        let fileContent = 'Sonora AI Song Export\n\n';
-        songData.structure.forEach(section => {
-            fileContent += `(${section.label})\n`;
-            section.content.forEach(part => {
-                fileContent += `${part.text}\n`;
-            });
-            fileContent += '\n';
+        const { title, structure, progression, key, bpm, timeSignature } = songData;
+        
+        let content = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${title}</title><style>body{font-family:serif;line-height:1.6;color:#3a3127;background:#f5f3f0;padding:2rem;}h1{color:#a33100;}h2{color:#115e59;border-bottom:1px solid #e5e2de;padding-bottom:0.5rem;}.metadata{background:#fffffb;border:1px solid #e5e2de;padding:1rem;margin-bottom:2rem;}.lyrics{white-space:pre-wrap;}</style></head><body><h1>${title}</h1><div class="metadata"><strong>Key:</strong> ${key} | <strong>BPM:</strong> ${bpm} | <strong>Time Signature:</strong> ${timeSignature}<br><strong>Progression:</strong> ${progression.map(p => `${p.chord.name} (${p.durationBeats} beats)`).join(' - ') || 'N/A'}</div>`;
+        
+        structure.forEach(section => {
+            content += `<h2>${section.label}</h2>\n<div class="lyrics">\n${section.content.map(p => p.text).join('\n\n')}\n</div>\n`;
         });
+        content += '</body></html>';
 
-        if (songData.progression.length > 0) {
-            fileContent += `---\n`;
-            fileContent += `Chord Progression (Key of ${songData.key}):\n`;
-            fileContent += songData.progression.map(c => c.name).join(' - ') + '\n';
-        }
-
-        const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = 'sonora-ai-song.txt';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const blob = new Blob([content], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${title.replace(/\s/g, '_')}.html`;
+        a.click();
+        URL.revokeObjectURL(url);
     };
-    
-    const handleShare = async () => {
+
+    const handleShare = async (): Promise<boolean> => {
         try {
-            // Create a storable version without blobUrls for sharing
-            const shareableData: SongData = {
+            const storableData: Partial<SongData> = {
                 ...songData,
                 structure: songData.structure.map(section => {
                     if (!section.audio) return section;
-                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
                     const { blobUrl, ...storableAudio } = section.audio;
                     return { ...section, audio: storableAudio };
                 }),
             };
-            const jsonData = JSON.stringify(shareableData);
+            const jsonData = JSON.stringify(storableData);
             const base64Data = bytesToBase64(new TextEncoder().encode(jsonData));
-            const url = `${window.location.origin}${window.location.pathname}#data=${base64Data}`;
-            await navigator.clipboard.writeText(url);
-            return true; // Indicate success
+            const shareUrl = `${window.location.origin}${window.location.pathname}#data=${base64Data}`;
+            await navigator.clipboard.writeText(shareUrl);
+            return true;
         } catch (e) {
-            console.error("Failed to create share link", e);
-            setError("Could not copy share link. Your song might be too large for a URL.");
-            return false; // Indicate failure
+            console.error("Failed to copy share link:", e);
+            setError("Could not copy the share link.");
+            return false;
         }
     };
 
-    // Initial chord library load
-    useEffect(() => {
-        if (songData.key) {
-           handleGenerateLibrary(songData.key);
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [songData.key]);
-
+    const getGridCols = () => {
+        if (isStructurePanelOpen && isToolsPanelOpen) return 'grid-cols-[3fr_6fr_3fr]';
+        if (isStructurePanelOpen) return 'grid-cols-[3fr_9fr_0fr]';
+        if (isToolsPanelOpen) return 'grid-cols-[0fr_9fr_3fr]';
+        return 'grid-cols-[0fr_12fr_0fr]';
+    }
 
     return (
-        <div className="min-h-screen flex flex-col font-sans">
-            {isLoading && <LoadingOverlay />}
-            {error && <ErrorDisplay message={error} onClose={() => setError(null)} />}
-            {isIdeaModalOpen && generatedIdea && <GeneratedIdeaModal idea={generatedIdea} onClose={() => setIsIdeaModalOpen(false)} />}
-            {isAnalysisModalOpen && songAnalysis && <AnalysisModal analysis={songAnalysis} onClose={() => setIsAnalysisModalOpen(false)} />}
-            
+        <div className="h-screen w-screen bg-cream flex flex-col font-sans">
             <Header 
+                title={songData.title}
+                onUpdateTitle={handleUpdateTitle}
                 onNewSong={handleNewSong}
                 onExport={handleExport}
                 onShare={handleShare}
                 onToggleStructure={() => setIsStructurePanelOpen(prev => !prev)}
+                onToggleTools={() => setIsToolsPanelOpen(prev => !prev)}
             />
-
-            <main className="flex-grow flex w-full">
-                {isStructurePanelOpen && (
-                    <aside className="w-64 flex-shrink-0 p-4 border-r border-sepia-200 bg-cream-100/30 h-[calc(100vh-65px)] overflow-y-auto">
-                         <SongStructureEditor 
-                            sections={songData.structure}
-                            activeSectionId={activeSectionId}
-                            onSectionSelect={setActiveSectionId}
-                            onReorder={handleReorderSections}
-                            onDelete={handleDeleteSection}
-                            onUpdateSection={handleUpdateSection}
-                            onAddSection={handleAddSection}
+            <main className={`flex-grow grid ${getGridCols()} gap-6 p-4 md:p-6 overflow-hidden transition-all duration-300 ease-in-out`}>
+                <aside className={`transition-all duration-300 ease-in-out overflow-hidden ${!isStructurePanelOpen && 'scale-x-0 -mr-6 opacity-0'}`}>
+                     <div className="bg-cream-100/50 rounded-lg p-4 h-full overflow-y-auto">
+                        <SongStructureEditor 
+                           sections={songData.structure}
+                           activeSectionId={activeSectionId}
+                           onSectionSelect={setActiveSectionId}
+                           onReorder={handleReorderSections}
+                           onDelete={handleDeleteSection}
+                           onUpdateSection={handleUpdateSection}
+                           onAddSection={handleAddSection}
                         />
-                    </aside>
-                )}
+                     </div>
+                </aside>
                 
-                <div className="flex-grow p-6 h-[calc(100vh-65px)] overflow-y-auto">
-                     <Editor 
+                <div className="transition-all duration-300 ease-in-out h-full">
+                     <Editor
                         activeSection={activeSection}
                         onAddContentPart={handleAddContentPart}
+                        onUpdateContentPart={handleUpdateContentPart}
                         onDeleteContentPart={handleDeleteContentPart}
                         onCowrite={handleCowrite}
+                        onModifyLyric={handleModifyLyric}
                         onUpdateAudio={handleUpdateAudio}
                         onDeleteAudio={handleDeleteAudio}
                         onAnalyzeAudio={handleAnalyzeAudio}
+                        lyricSuggestions={lyricSuggestions}
                     />
                 </div>
-
-                <aside className="w-96 flex-shrink-0 border-l border-sepia-200 h-[calc(100vh-65px)]">
+                
+                <aside className={`transition-all duration-300 ease-in-out overflow-hidden ${!isToolsPanelOpen && 'scale-x-0 -ml-6 opacity-0'}`}>
                     <Sidebar
+                        songData={songData}
+                        isPlaying={isPlaying}
+                        playheadPosition={playheadPosition}
                         onGenerateIdea={handleGenerateIdea}
                         onGenerateBlendedIdea={handleGenerateBlendedIdea}
                         onFindRhymes={handleFindRhymes}
@@ -663,7 +657,9 @@ const App: React.FC = () => {
                         onGenerateWordAssociations={handleGenerateWordAssociations}
                         onGeneratePrompt={handleGeneratePrompt}
                         onGenerateInspirationalSpark={handleGetInspirationalSpark}
-                        onSuggestRhythms={handleSuggestRhythms}
+                        onGenerateTitles={handleGenerateTitles}
+                        onGenerateEmotionalPalette={handleGenerateEmotionalPalette}
+                        onGenerateObjectObservation={handleGenerateObjectObservation}
                         onSuggestStructures={handleSuggestStructures}
                         onAnalyzeSong={handleAnalyzeSong}
                         onApplyStructure={handleApplyStructure}
@@ -672,17 +668,28 @@ const App: React.FC = () => {
                         wordAssociations={wordAssociations}
                         creativePrompt={creativePrompt}
                         inspirationalSpark={inspirationalSpark}
-                        rhythmSuggestions={rhythmSuggestions}
                         structureSuggestions={structureSuggestions}
                         chordLibrary={chordLibrary}
-                        chordRiverProgression={songData.progression}
-                        currentKey={songData.key}
                         onUpdateProgression={handleUpdateProgression}
+                        onUpdateProgressionStep={handleUpdateProgressionStep}
                         onGenerateLibrary={handleGenerateLibrary}
-                        onPlayProgression={handlePlayProgression}
+                        onPlay={handlePlay}
+                        onStop={handleStop}
+                        onUpdateBpm={handleUpdateBpm}
+                        onUpdateTimeSignature={handleUpdateTimeSignature}
+                        onUpdateMelody={handleUpdateMelody}
                     />
                 </aside>
             </main>
+
+            {isIdeaModalOpen && generatedIdea && (
+                <GeneratedIdeaModal idea={generatedIdea} onClose={() => setIsIdeaModalOpen(false)} />
+            )}
+            {isAnalysisModalOpen && songAnalysis && (
+                <AnalysisModal analysis={songAnalysis} onClose={() => setIsAnalysisModalOpen(false)} />
+            )}
+            {isLoading && <LoadingOverlay />}
+            {error && <ErrorDisplay message={error} onClose={() => setError(null)} />}
         </div>
     );
 };

@@ -1,12 +1,23 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
-import type { GenerateIdeaParams, GenerateChordsParams, GenerateRhymesParams, GenerateSynonymsParams, GenerateWordAssociationsParams, RhythmSuggestion, GenerateRhythmParams, GenerateBlendedIdeaParams, Chord, AnalyzeSongParams, SongSection, AudioAnalysisResult, GetInspirationalSparkParams } from '../types';
+import type { GenerateIdeaParams, GenerateChordsParams, GenerateRhymesParams, GenerateSynonymsParams, GenerateWordAssociationsParams, GenerateBlendedIdeaParams, Chord, AnalyzeSongParams, SongSection, AudioAnalysisResult, GetInspirationalSparkParams, ModifyLyricParams, ProgressionStep, GenerateTitleParams, GenerateEmotionalPaletteParams, GenerateObjectObservationParams } from '../types';
 
-if (!process.env.API_KEY) {
-    throw new Error("API_KEY environment variable not set");
-}
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+let ai: GoogleGenAI | null = null;
 const model = 'gemini-2.5-flash';
+
+const getAiInstance = (): GoogleGenAI => {
+    if (ai) {
+        return ai;
+    }
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+        // This specific error message will be caught and displayed to the user.
+        throw new Error("API key is missing. Please ensure the API_KEY environment variable is set correctly.");
+    }
+    ai = new GoogleGenAI({ apiKey });
+    return ai;
+};
+
 
 const arrayOfStringSchema = {
     type: Type.ARRAY,
@@ -16,7 +27,12 @@ const arrayOfStringSchema = {
 };
 
 const generateContentWithSchema = async (prompt: string, schema: any): Promise<any> => {
-    const response = await ai.models.generateContent({
+    if (typeof prompt !== 'string' || !prompt.trim()) {
+        console.error("AI prompt was empty or invalid. Aborting request.");
+        throw new Error("Cannot send an empty prompt to the AI.");
+    }
+    const aiInstance = getAiInstance();
+    const response = await aiInstance.models.generateContent({
         model,
         contents: prompt,
         config: {
@@ -35,7 +51,12 @@ const generateContentWithSchema = async (prompt: string, schema: any): Promise<a
 };
 
 const generateTextContent = async (prompt: string): Promise<string> => {
-    const response = await ai.models.generateContent({
+    if (typeof prompt !== 'string' || !prompt.trim()) {
+        console.error("AI prompt was empty or invalid. Aborting request.");
+        throw new Error("Cannot send an empty prompt to the AI.");
+    }
+    const aiInstance = getAiInstance();
+    const response = await aiInstance.models.generateContent({
         model,
         contents: prompt,
         config: {
@@ -45,20 +66,19 @@ const generateTextContent = async (prompt: string): Promise<string> => {
     return response.text;
 };
 
-const formatSongForAnalysis = (structure: SongSection[], progression: Chord[]): string => {
+const formatSongForAnalysis = (structure: SongSection[], progression: ProgressionStep[]): string => {
     let songString = '';
 
     structure.forEach(section => {
         songString += `(${section.label})\n`;
         section.content.forEach(part => {
-            // We only need the text, not the author for the analysis prompt
             songString += `${part.text}\n`;
         });
         songString += '\n';
     });
 
     if (progression.length > 0) {
-        songString += `Chord Progression:\n${progression.map(c => c.name).join(' - ')}\n`;
+        songString += `Chord Progression:\n${progression.map(p => `${p.chord.name} (${p.durationBeats} beats)`).join(' - ')}\n`;
     }
 
     return songString.trim();
@@ -81,6 +101,37 @@ ${existingLyrics}
 
 Your poetic contribution:`;
         return generateTextContent(fullPrompt);
+    },
+
+    modifyLyric: async ({ line, context, modificationType }: ModifyLyricParams): Promise<string | string[]> => {
+        let prompt = '';
+        switch (modificationType) {
+            case 'refine':
+                prompt = `You are a poetic editor. Refine and improve the following lyric, keeping its core idea but enhancing the imagery, flow, and word choice. Make it more evocative.
+Original line: "${line}"
+Lyrical context: "${context}"
+Refined line:`;
+                return generateTextContent(prompt);
+            
+            case 'replace':
+                prompt = `You are a creative lyricist. Write a completely new line to replace the original, maintaining the same theme and mood found in the context.
+Original line to be replaced: "${line}"
+Lyrical context: "${context}"
+New, replacement line:`;
+                return generateTextContent(prompt);
+
+            case 'suggest_alternatives':
+                prompt = `You are a songwriter's assistant. Provide 3 diverse alternatives for the following lyric. The alternatives should fit the provided context. Return a JSON array of 3 strings.
+Original line: "${line}"
+Lyrical context: "${context}"`;
+                return generateContentWithSchema(prompt, arrayOfStringSchema);
+
+            case 'random_line':
+                prompt = `You are a source of creative inspiration. Generate a single, random, poetic line that is thematically related to the following context, but is not a direct replacement for any specific line.
+Lyrical context: "${context}"
+Inspirational line:`;
+                return generateTextContent(prompt);
+        }
     },
     
     generateSongIdea: async ({ topic }: GenerateIdeaParams): Promise<string> => {
@@ -125,53 +176,53 @@ Concept: [Your Concept]
         return generateTextContent(prompt);
     },
 
-    analyzeSong: async ({ structure, progression }: AnalyzeSongParams): Promise<string> => {
+    analyzeSong: async ({ structure, progression, analysisType }: AnalyzeSongParams): Promise<string> => {
         const songContent = formatSongForAnalysis(structure, progression);
-        const prompt = `You are an expert song doctor and music critic. A songwriter has asked for feedback on their work-in-progress.
-Analyze the provided song based on its lyrics, structure, and chord progression. Provide constructive, actionable feedback.
+        let prompt = `You are an expert song doctor and music critic. A songwriter has asked for feedback on their work-in-progress.\n\n**The Song:**\n---\n${songContent}\n---`;
 
-**The Song:**
----
-${songContent}
----
-
-**Your Analysis Task:**
+        switch(analysisType) {
+            case 'rhyme_analyzer':
+                prompt += `\n\n**Your Analysis Task:**
+Analyze the **rhyme scheme and word choice** of the lyrics.
+- Identify the rhyme scheme for each section (e.g., AABB, ABAB).
+- Point out any particularly effective or creative rhymes.
+- Identify any rhymes that feel weak, forced, or cliché.
+- Suggest 1-2 specific areas where a different rhyming choice could enhance the song's impact.
+Format your response as a single block of text using markdown for structure.`;
+                break;
+            case 'repetition_analyzer':
+                prompt += `\n\n**Your Analysis Task:**
+Analyze the use of **repetition** in the lyrics.
+- Identify key repeated words, phrases, or motifs.
+- Evaluate whether the repetition is effective for emphasis and structure (e.g., in a chorus) or if it becomes monotonous.
+- Point out any "crutch words" that are overused without adding significant meaning.
+- Suggest 1-2 specific ways to vary the language or introduce new phrasing to improve the song.
+Format your response as a single block of text using markdown for structure.`;
+                break;
+            case 'song_doctor':
+            default:
+                 prompt += `\n\n**Your Analysis Task:**
 Please provide a structured analysis covering the following points. Keep your feedback encouraging but honest.
+**1. Overall Impression & Emotional Arc:** What is the main feeling or story? Does the emotional journey feel compelling?
+**2. Lyrical Analysis:** Is the theme clear? Are the images strong? Are there any standout lines or clichés?
+**3. Structural Analysis:** Is the song structure effective? Does the song build dynamically?
+**4. Harmonic Analysis (if chords are provided):** Does the chord progression support the lyrical mood?
+**5. Actionable Suggestions:** Provide 2-3 specific, concrete suggestions for how the songwriter could improve this piece.
+Format your entire response as a single block of text. Use markdown-style bolding for headers.`;
+                break;
+        }
 
-**1. Overall Impression & Emotional Arc:**
-- What is the main feeling or story of the song?
-- Does the emotional journey feel compelling from start to finish?
-
-**2. Lyrical Analysis:**
-- **Theme:** Is the central theme clear and consistent?
-- **Imagery & Metaphor:** Are the images strong? Are there any standout lines or clichés to avoid?
-- **Rhyme Scheme:** Is the rhyme scheme effective? Is there a good balance between predictability and surprise?
-
-**3. Structural Analysis:**
-- Is the song structure (e.g., Verse-Chorus) effective for the song's message?
-- Does the song build dynamically? Does each section serve its purpose?
-
-**4. Harmonic Analysis (if chords are provided):**
-- Does the chord progression support the lyrical mood?
-- Are there opportunities to add more harmonic interest?
-
-**5. Actionable Suggestions:**
-- Provide 2-3 specific, concrete suggestions for how the songwriter could improve this piece. For example, "Consider changing the rhyme in the second verse to be less direct," or "The bridge could use a new chord to create more tension before the final chorus."
-
-Format your entire response as a single block of text. Use markdown-style bolding for headers (e.g., **Lyrical Analysis**).`;
         return generateTextContent(prompt);
     },
 
     analyzeAudioPart: async (audioBase64: string, mimeType: string): Promise<AudioAnalysisResult> => {
-        const prompt = `You are a helpful and creative music expert. A songwriter has recorded a short audio clip, likely a sung melody or a simple instrumental idea.
-
-Your task is to analyze this audio and provide creative suggestions to help them develop the idea.
-
-1.  **Analyze the audio:** Listen to the clip and describe its core musical characteristics.
-2.  **Suggest lyrics:** Write a 4-line verse that matches the mood, feeling, and implied rhythm of the audio.
-3.  **Suggest chords:** Propose a simple 4-chord progression (e.g., "C - G - Am - F") that would musically support the melody you heard.
-
+        const prompt = `You are a helpful and creative music expert. A songwriter has recorded a short audio clip.
+Analyze this audio and provide creative suggestions to help them develop the idea.
+1.  **Analyze the audio:** Describe its core musical characteristics (mood, tempo, contour).
+2.  **Suggest lyrics:** Write a 4-line verse that matches the mood and rhythm.
+3.  **Suggest chords:** Propose a simple 4-chord progression (e.g., "C - G - Am - F").
 Return a JSON object with your analysis and suggestions.`;
+        const aiInstance = getAiInstance();
 
         const audioAnalysisSchema = {
             type: Type.OBJECT,
@@ -181,7 +232,7 @@ Return a JSON object with your analysis and suggestions.`;
                     properties: {
                         mood: { type: Type.STRING, description: "The overall mood of the melody (e.g., 'melancholic', 'upbeat', 'haunting')." },
                         tempo: { type: Type.STRING, description: "The estimated tempo (e.g., 'slow ballad', 'mid-tempo groove', 'fast and energetic')." },
-                        contour: { type: Type.STRING, description: "A brief description of the melodic shape (e.g., 'A simple, ascending line that resolves downwards', 'A repeating rhythmic phrase on a single note')." }
+                        contour: { type: Type.STRING, description: "A brief description of the melodic shape (e.g., 'A simple, ascending line that resolves downwards')." }
                     },
                      required: ["mood", "tempo", "contour"],
                 },
@@ -204,7 +255,7 @@ Return a JSON object with your analysis and suggestions.`;
             },
         };
 
-        const response = await ai.models.generateContent({
+        const response = await aiInstance.models.generateContent({
             model,
             contents: { parts: [ {text: prompt}, audioPart ] },
             config: {
@@ -223,13 +274,8 @@ Return a JSON object with your analysis and suggestions.`;
 
     findRhymes: async ({ word }: GenerateRhymesParams): Promise<string[]> => {
         const prompt = `You are a master poet. Generate a list of 15 sophisticated and interesting rhymes for the word "${word}".
-Prioritize less common rhymes like:
-- Slant rhymes (e.g., shape/keep)
-- Near rhymes (e.g., orange/storage)
-- Multisyllabic rhymes (e.g., mysterious/victorious)
-
-AVOID overly simple, common, and cliché perfect rhymes (for "fire", avoid "desire", "higher").
-The goal is to provide creative, unexpected options.`;
+Prioritize less common rhymes like slant rhymes, near rhymes, and multisyllabic rhymes.
+AVOID overly simple, common, and cliché perfect rhymes. The goal is to provide creative, unexpected options.`;
         return generateContentWithSchema(prompt, arrayOfStringSchema);
     },
 
@@ -240,14 +286,9 @@ The goal is to provide creative, unexpected options.`;
 
     getChordLibrary: async ({ key }: GenerateChordsParams): Promise<Chord[]> => {
         const prompt = `You are an expert music theorist. For the key of ${key} Major, provide a library of common chords.
-        
-        Include the following:
-        1. All 7 diatonic chords (triads or sevenths are fine, e.g., C, Dm, G7).
-        2. At least 3 common non-diatonic or borrowed chords (e.g., secondary dominants like V/V, or chords from the parallel minor like iv or bVI).
-
-        For each chord, identify its musical function. Use one of the following function names: 'tonic', 'subdominant', 'dominant', 'predominant', 'leading-tone', 'secondary-dominant', 'other'.
-        
-        Return an array of objects, with each object having a 'name' and a 'function'.`;
+        Include all 7 diatonic chords plus at least 3 common non-diatonic or borrowed chords.
+        For each chord, identify its musical function. Use one of the following: 'tonic', 'subdominant', 'dominant', 'predominant', 'leading-tone', 'secondary-dominant', 'other'.
+        Return an array of objects, each with a 'name' and a 'function'.`;
 
         const schema = {
             type: Type.ARRAY,
@@ -277,9 +318,7 @@ The goal is to provide creative, unexpected options.`;
     },
 
     generateCreativePrompt: async (): Promise<string> => {
-        const prompt = `Generate a unique and inspiring songwriting prompt to help break writer's block. 
-        It could be a "what if" scenario, a question, an interesting image to describe, a character to write about, or a short story starter. 
-        Keep it concise and open-ended. For example: "Write a song from the perspective of a forgotten photograph in an old antique shop." or "What if you could hear the thoughts of inanimate objects for one day?".`;
+        const prompt = `Generate a unique and inspiring songwriting prompt to help break writer's block. It could be a "what if" scenario, a question, an interesting image to describe, or a short story starter. Keep it concise and open-ended.`;
         return generateTextContent(prompt);
     },
 
@@ -287,48 +326,47 @@ The goal is to provide creative, unexpected options.`;
         let prompt = '';
         switch(sourceType) {
             case 'poet':
-                prompt = `Generate a single, evocative, and original line of poetry (6-12 words) in the style of a classic poet like Dickinson or Rilke. It should be rich in imagery and metaphor, suitable for sparking a song idea. Do not include quotation marks.`;
+                prompt = `Generate a single, evocative, and original line of poetry (6-12 words) in the style of a classic poet. Rich in imagery and metaphor. Do not include quotation marks.`;
                 break;
             case 'philosopher':
-                prompt = `Generate a single, short, thought-provoking philosophical question or aphorism (under 15 words) in the style of a stoic or existentialist thinker. It should challenge a common assumption. Do not include quotation marks.`;
+                prompt = `Generate a single, short, thought-provoking philosophical question or aphorism (under 15 words) that challenges a common assumption. Do not include quotation marks.`;
                 break;
             case 'artist':
-                prompt = `Generate a single, vivid sentence describing a scene as if it were a painting (10-20 words). Focus on color, light, and mood, in the style of an impressionist or romantic painter. Do not include quotation marks.`;
+                prompt = `Generate a single, vivid sentence describing a scene as if it were a painting (10-20 words). Focus on color, light, and mood. Do not include quotation marks.`;
                 break;
         }
+        return generateTextContent(prompt);
+    },
+
+    generateTitles: async ({ theme }: GenerateTitleParams): Promise<string[]> => {
+        const prompt = `You are a creative title generator for a songwriter.
+Based on the theme "${theme}", generate 5 evocative and original song titles.
+The titles should be a mix of styles: some direct, some metaphorical, some intriguing.
+Return a JSON array of 5 strings.`;
+        return generateContentWithSchema(prompt, arrayOfStringSchema);
+    },
+    
+    generateEmotionalPaletteScene: async ({ emotions }: GenerateEmotionalPaletteParams): Promise<string> => {
+        const prompt = `You are an expert storyteller and screenwriter.
+A songwriter wants a creative spark based on a complex emotional palette.
+The selected emotions are: **${emotions.join(', ')}**.
+Your task is to generate a short, vivid scene (2-3 sentences) that embodies this specific blend of emotions.
+Describe a setting, a character, and an action or a thought. Make it concrete and sensory.
+This scene will serve as the core inspiration for a song.`;
+        return generateTextContent(prompt);
+    },
+    
+    generateObjectObservation: async ({ object }: GenerateObjectObservationParams): Promise<string> => {
+        const prompt = `You are a poet with a keen eye for detail and metaphor.
+A songwriter has chosen an object for inspiration: **a ${object}**.
+Your task is to write a short, poetic observation about this object (3-4 lines).
+Consider its history, its purpose, its texture, the memories it might hold, or a metaphor it could represent.
+The goal is to provide a unique and unexpected perspective on the mundane.`;
         return generateTextContent(prompt);
     },
 
     generateWordAssociations: async ({ word }: GenerateWordAssociationsParams): Promise<string[]> => {
         const prompt = `Generate a list of 10 creative and evocative words associated with the word "${word}". Think beyond direct synonyms. Include concepts, emotions, objects, and actions that are thematically or metaphorically related.`;
         return generateContentWithSchema(prompt, arrayOfStringSchema);
-    },
-
-    suggestRhythmPhrasings: async ({ line }: GenerateRhythmParams): Promise<RhythmSuggestion[]> => {
-        const prompt = `You are an expert songwriter and poet. Analyze the following lyric and suggest 3 distinct rhythmic interpretations for it: "${line}"
-
-        For each interpretation, provide:
-        1.  **meter**: A common time signature (e.g., "4/4", "3/4").
-        2.  **name**: The name of the dominant poetic meter (e.g., "Iambic Pentameter", "Anapestic Trimeter", "Dactylic Tetrameter", "Syncopated Pop").
-        3.  **pattern**: A simple representation of the rhythm using "da" for unstressed and "DUM" for stressed syllables (e.g., "da-DUM da-DUM da-DUM").
-        4.  **formattedLine**: The original line with the stressed syllables written in ALL CAPS to make them stand out (e.g., "the CI-ty SLEEPS be-LOW my WIN-dow PANE"). Do not add any other formatting.
-        5.  **description**: A brief explanation of the feeling or style this rhythm creates (e.g., "Creates a classic, conversational feel.", "Energetic and driving, perfect for an upbeat chorus.").`;
-
-        const schema = {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    meter: { type: Type.STRING, description: "A common time signature (e.g., '4/4', '3/4')." },
-                    name: { type: Type.STRING, description: "The name of the dominant poetic meter." },
-                    pattern: { type: Type.STRING, description: "A simple representation of the rhythm using 'da' and 'DUM'." },
-                    formattedLine: { type: Type.STRING, description: "The lyric with stressed syllables in ALL CAPS." },
-                    description: { type: Type.STRING, description: "A brief explanation of the feeling this rhythm creates." }
-                },
-                required: ["meter", "name", "pattern", "formattedLine", "description"]
-            }
-        };
-
-        return generateContentWithSchema(prompt, schema);
     },
 };

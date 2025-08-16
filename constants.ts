@@ -4,6 +4,11 @@ export const MUSICAL_KEYS = [
     'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'
 ];
 
+export const TIME_SIGNATURES = ['4/4', '3/4', '6/8'];
+
+// C Major Pentatonic Scale over 1 octave for the Melody Sketchpad
+export const MELODY_PITCHES = ['C5', 'B4', 'A4', 'G4', 'E4', 'D4', 'C4'];
+
 export const SONG_MOODS = [
     'Happy', 'Sad', 'Energetic', 'Calm', 'Romantic', 'Epic', 'Melancholic', 'Hopeful', 'Dark', 'Mysterious'
 ];
@@ -12,10 +17,8 @@ export const SONG_GENRES = [
     'Pop', 'Rock', 'Jazz', 'Folk', 'R&B', 'Electronic', 'Blues', 'Country', 'Hip-Hop'
 ];
 
-export const CHORD_COMPLEXITIES = [
-    'Simple',
-    'Intermediate',
-    'Advanced'
+export const EMOTIONAL_PALETTE_OPTIONS = [
+    'Joyful', 'Hopeful', 'Wistful', 'Nostalgic', 'Melancholy', 'Resentful', 'Anxious', 'Content', 'Defiant', 'Serene', 'Cautious', 'Introspective'
 ];
 
 export const SECTION_TYPES: SectionType[] = ['Intro', 'Verse', 'Pre-Chorus', 'Chorus', 'Bridge', 'Solo', 'Outro'];

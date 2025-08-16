@@ -1,18 +1,62 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { SongSection, ContentPart, Author } from '../types';
-import { SparklesIcon, TrashIcon, UserIcon, RobotIcon, MicrophoneIcon, StopIcon } from './icons';
+import type { SongSection, ContentPart, Author, LyricModificationType } from '../types';
+import { SparklesIcon, TrashIcon, UserIcon, RobotIcon, MicrophoneIcon, StopIcon, WandIcon, ArrowPathIcon, QueueListIcon, CubeTransparentIcon } from './icons';
 
 interface EditorProps {
     activeSection: SongSection | undefined;
     onAddContentPart: (sectionId: string, author: Author, text: string) => void;
+    onUpdateContentPart: (sectionId: string, partId: string, newText: string) => void;
     onDeleteContentPart: (sectionId: string, partId: string) => void;
     onCowrite: (sectionId: string, prompt: string) => void;
+    onModifyLyric: (sectionId: string, partId: string, params: { line: string, context: string, modificationType: LyricModificationType }) => void;
     onUpdateAudio: (sectionId: string, audioBlob: Blob) => void;
     onDeleteAudio: (sectionId: string) => void;
     onAnalyzeAudio: (sectionId: string) => void;
+    lyricSuggestions: { partId: string, suggestions: string[] } | null;
 }
 
-const ContentPartBlock: React.FC<{ part: ContentPart; onDelete: () => void; }> = ({ part, onDelete }) => {
+const SuggestionPicker: React.FC<{
+    suggestions: string[];
+    onSelect: (suggestion: string) => void;
+}> = ({ suggestions, onSelect }) => (
+    <div className="bg-cream-100 border border-teal-300 p-2 rounded-md my-2 space-y-1 shadow-lg">
+        <p className="text-xs font-semibold text-teal-800 mb-1">Suggestions:</p>
+        {suggestions.map((s, i) => (
+            <button key={i} onClick={() => onSelect(s)} className="w-full text-left text-sm text-sepia-800 p-1.5 rounded bg-teal-50/50 hover:bg-teal-100 transition-colors">
+                "{s}"
+            </button>
+        ))}
+    </div>
+);
+
+
+const ContentPartBlock: React.FC<{ 
+    part: ContentPart; 
+    sectionContext: string;
+    isEditing: boolean;
+    editedText: string;
+    lyricSuggestions: { partId: string, suggestions: string[] } | null;
+    onSetEditedText: (text: string) => void;
+    onStartEditing: () => void;
+    onSaveChanges: () => void;
+    onCancelEditing: () => void;
+    onDelete: () => void; 
+    onModify: (modificationType: LyricModificationType) => void;
+    onApplySuggestion: (suggestion: string) => void;
+}> = ({ 
+    part, 
+    sectionContext,
+    isEditing, 
+    editedText,
+    lyricSuggestions,
+    onSetEditedText,
+    onStartEditing,
+    onSaveChanges, 
+    onCancelEditing,
+    onDelete, 
+    onModify,
+    onApplySuggestion,
+}) => {
     const isUser = part.author === 'user';
     
     const containerClasses = isUser 
@@ -26,8 +70,54 @@ const ContentPartBlock: React.FC<{ part: ContentPart; onDelete: () => void; }> =
     const authorName = isUser ? 'You' : 'AI Co-Writer';
     const authorColor = isUser ? 'text-sepia-800' : 'text-teal-800';
 
+    if (isEditing && isUser) {
+        const AIToolButton = ({ icon, label, onClick }: { icon: React.ReactNode, label: string, onClick: () => void }) => (
+            <button onClick={onClick} title={label} className="flex items-center gap-1 p-1.5 rounded-md text-teal-700 hover:bg-teal-100 hover:text-teal-800 transition-colors">
+                {icon}
+                <span className="text-xs font-semibold">{label}</span>
+            </button>
+        );
+
+        return (
+            <div className={`group relative p-4 rounded-md border-2 border-orange-700 ${containerClasses}`}>
+                <div className="flex items-start gap-4">
+                    <div className="flex-shrink-0 mt-0.5">{icon}</div>
+                    <div className="flex-grow">
+                         <p className={`font-semibold font-typewriter text-sm ${authorColor} mb-1`}>{authorName} (Editing)</p>
+                         <textarea
+                            value={editedText}
+                            onChange={(e) => onSetEditedText(e.target.value)}
+                            className="w-full bg-cream-100/50 text-sepia-900 p-2 rounded-md border border-sepia-300 focus:outline-none focus:ring-1 focus:ring-orange-700 resize-y text-base"
+                            rows={Math.max(3, editedText.split('\n').length)}
+                            autoFocus
+                         />
+                         {lyricSuggestions && lyricSuggestions.partId === part.id && (
+                             <SuggestionPicker suggestions={lyricSuggestions.suggestions} onSelect={onApplySuggestion} />
+                         )}
+                         <div className="mt-2 flex items-center justify-between">
+                             <div className="flex items-center gap-1 border border-teal-200 bg-teal-50/30 rounded-lg p-0.5">
+                                 <AIToolButton icon={<WandIcon className="w-4 h-4" />} label="Refine" onClick={() => onModify('refine')} />
+                                 <AIToolButton icon={<ArrowPathIcon className="w-4 h-4" />} label="Replace" onClick={() => onModify('replace')} />
+                                 <AIToolButton icon={<QueueListIcon className="w-4 h-4" />} label="Suggest" onClick={() => onModify('suggest_alternatives')} />
+                                 <AIToolButton icon={<CubeTransparentIcon className="w-4 h-4" />} label="Inspire" onClick={() => onModify('random_line')} />
+                             </div>
+                             <div className="flex items-center gap-2">
+                                <button onClick={onSaveChanges} className="bg-orange-700 hover:bg-orange-600 text-cream-100 font-semibold text-sm px-3 py-1 rounded-md transition-all shadow-sm">Save</button>
+                                <button onClick={onCancelEditing} className="text-sm text-sepia-800 font-medium hover:underline">Cancel</button>
+                             </div>
+                         </div>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
     return (
-        <div className={`group relative p-4 rounded-md border ${containerClasses}`}>
+        <div 
+            className={`group relative p-4 rounded-md border ${containerClasses} ${isUser ? 'cursor-pointer' : ''}`}
+            onClick={isUser ? onStartEditing : undefined}
+            title={isUser ? "Click to edit" : ""}
+        >
             <div className="flex items-start gap-4">
                 <div className="flex-shrink-0 mt-0.5">{icon}</div>
                 <div className="flex-grow">
@@ -35,7 +125,7 @@ const ContentPartBlock: React.FC<{ part: ContentPart; onDelete: () => void; }> =
                     <p className="text-sepia-900 whitespace-pre-wrap leading-relaxed text-base">{part.text}</p>
                 </div>
             </div>
-             <button onClick={onDelete} className="absolute top-2 right-2 p-1 rounded-full text-sepia-400 hover:bg-red-500/10 hover:text-red-600 transition-all opacity-0 group-hover:opacity-100">
+             <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="absolute top-2 right-2 p-1 rounded-full text-sepia-400 hover:bg-red-500/10 hover:text-red-600 transition-all opacity-0 group-hover:opacity-100">
                 <TrashIcon className="w-4 h-4" />
             </button>
         </div>
@@ -159,13 +249,20 @@ const MelodySketchpad: React.FC<{
 };
 
 
-export const Editor: React.FC<EditorProps> = ({ activeSection, onAddContentPart, onDeleteContentPart, onCowrite, onUpdateAudio, onDeleteAudio, onAnalyzeAudio }) => {
+export const Editor: React.FC<EditorProps> = ({ activeSection, onAddContentPart, onUpdateContentPart, onDeleteContentPart, onCowrite, onModifyLyric, onUpdateAudio, onDeleteAudio, onAnalyzeAudio, lyricSuggestions }) => {
     const [userText, setUserText] = useState('');
     const endOfMessagesRef = useRef<HTMLDivElement>(null);
+    const [editingPartId, setEditingPartId] = useState<string | null>(null);
+    const [editedText, setEditedText] = useState('');
 
     useEffect(() => {
         endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [activeSection?.content]);
+
+    // When the active section changes, cancel any ongoing edits
+    useEffect(() => {
+        setEditingPartId(null);
+    }, [activeSection?.id]);
 
     const handleAddUserLines = () => {
         if (activeSection && userText.trim()) {
@@ -188,7 +285,35 @@ export const Editor: React.FC<EditorProps> = ({ activeSection, onAddContentPart,
                     <ContentPartBlock 
                         key={part.id} 
                         part={part} 
+                        sectionContext={activeSection.content.map(p => p.text).join('\n')}
+                        isEditing={editingPartId === part.id}
+                        editedText={editedText}
+                        lyricSuggestions={lyricSuggestions}
+                        onSetEditedText={setEditedText}
+                        onStartEditing={() => {
+                            setEditingPartId(part.id);
+                            setEditedText(part.text);
+                        }}
+                        onSaveChanges={() => {
+                            if (editedText.trim()) {
+                                onUpdateContentPart(activeSection.id, part.id, editedText);
+                            }
+                            setEditingPartId(null);
+                        }}
+                        onCancelEditing={() => setEditingPartId(null)}
                         onDelete={() => onDeleteContentPart(activeSection.id, part.id)}
+                        onModify={(modificationType) => {
+                            const lineToModify = modificationType === 'random_line' ? '' : editedText;
+                            onModifyLyric(activeSection.id, part.id, {
+                                line: lineToModify,
+                                context: activeSection.content.filter(p => p.id !== part.id).map(p => p.text).join('\n'),
+                                modificationType
+                            });
+                        }}
+                        onApplySuggestion={(suggestion) => {
+                             onUpdateContentPart(activeSection.id, part.id, suggestion);
+                             setEditingPartId(null);
+                        }}
                     />
                 ))}
                 {!activeSection && (
