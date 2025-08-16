@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { Editor } from './components/Editor';
@@ -191,7 +192,7 @@ const App: React.FC = () => {
     // Playback State
     const [isPlaying, setIsPlaying] = useState(false);
     const [playheadPosition, setPlayheadPosition] = useState(0); // Position in beats
-    const animationFrameRef = useRef<number>();
+    const animationFrameRef = useRef<number | null>(null);
     const playbackStartTimeRef = useRef<number>(0);
 
 
@@ -369,6 +370,10 @@ const App: React.FC = () => {
     const handleCowrite = withLoading(async (sectionId: string, prompt: string) => {
         const section = songData.structure.find(s => s.id === sectionId);
         if (!section) return;
+        if (!prompt.trim()) {
+            setError("Please provide a prompt for the AI co-writer.");
+            return;
+        }
         const existingLyrics = section.content.map(p => p.text).join('\n\n');
         const newLines = await geminiService.cowriteSection(prompt, existingLyrics);
         handleAddContentPart(sectionId, 'ai', newLines);
@@ -376,6 +381,10 @@ const App: React.FC = () => {
 
     const handleModifyLyric = withLoading(async (sectionId: string, partId: string, params: ModifyLyricParams) => {
         setLyricSuggestions(null);
+        if (params.modificationType !== 'random_line' && !params.line.trim()) {
+            setError("There is no lyric to modify. Please type something first.");
+            return;
+        }
         const result = await geminiService.modifyLyric(params);
         if (params.modificationType === 'suggest_alternatives' && Array.isArray(result)) {
             setLyricSuggestions({ partId, suggestions: result });
@@ -385,12 +394,20 @@ const App: React.FC = () => {
     });
 
     const handleGenerateIdea = withLoading(async (params: GenerateIdeaParams) => {
+        if (!params.topic.trim()) {
+            setError("Please enter a topic for the song idea.");
+            return;
+        }
         const idea = await geminiService.generateSongIdea(params);
         setGeneratedIdea(idea);
         setIsIdeaModalOpen(true);
     });
 
     const handleGenerateBlendedIdea = withLoading(async (params: GenerateBlendedIdeaParams) => {
+        if (!params.artists.trim()) {
+            setError("Please enter at least one artist to blend styles.");
+            return;
+        }
         const idea = await geminiService.generateBlendedIdea(params);
         setGeneratedIdea(idea);
         setIsIdeaModalOpen(true);
