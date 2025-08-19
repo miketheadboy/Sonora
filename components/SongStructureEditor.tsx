@@ -1,22 +1,22 @@
 
-import React, { useState, useEffect, memo } from 'react';
+import React, { useState, useEffect, memo, useContext } from 'react';
 import type { SongSection, SectionType } from '../types';
 import { TrashIcon, CheckIcon, XMarkIcon, SparklesIcon } from './icons';
 import { SECTION_TYPES } from '../constants';
+import { SongDataContext, ActionsContext } from '../App';
 
 interface SectionBlockProps {
     section: SongSection;
     isActive: boolean;
     onSelect: () => void;
-    onDelete: () => void;
-    onUpdate: (id: string, updates: { type: SectionType, label: string }) => void;
     onDragStart: (e: React.DragEvent) => void;
     onDragOver: (e: React.DragEvent) => void;
     onDrop: (e: React.DragEvent) => void;
     onDragEnd: (e: React.DragEvent) => void;
 }
 
-const SectionBlock: React.FC<SectionBlockProps> = memo(({ section, isActive, onSelect, onDelete, onUpdate, ...dragProps }) => {
+const SectionBlock: React.FC<SectionBlockProps> = memo(({ section, isActive, onSelect, ...dragProps }) => {
+    const actions = useContext(ActionsContext);
     const [isEditing, setIsEditing] = useState(false);
     const [editedLabel, setEditedLabel] = useState(section.label);
     const [editedType, setEditedType] = useState<SectionType>(section.type);
@@ -25,6 +25,9 @@ const SectionBlock: React.FC<SectionBlockProps> = memo(({ section, isActive, onS
         setEditedLabel(section.label);
         setEditedType(section.type);
     }, [section]);
+    
+    if (!actions) return null;
+    const { onUpdateSection, onDeleteSection } = actions;
 
     const typeColorMap: Record<string, string> = {
         'Intro': 'border-l-cyan-700',
@@ -44,7 +47,7 @@ const SectionBlock: React.FC<SectionBlockProps> = memo(({ section, isActive, onS
     const handleSave = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (editedLabel.trim()) {
-            onUpdate(section.id, { label: editedLabel.trim(), type: editedType });
+            onUpdateSection(section.id, { label: editedLabel.trim(), type: editedType });
         }
         setIsEditing(false);
     };
@@ -58,7 +61,7 @@ const SectionBlock: React.FC<SectionBlockProps> = memo(({ section, isActive, onS
 
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation();
-        onDelete();
+        onDeleteSection(section.id);
     };
 
     const baseClasses = 'group w-full bg-cream-100/50 p-2 rounded-md flex justify-between items-center cursor-pointer transition-all duration-200 border border-sepia-200 border-l-4 transform hover:bg-cream-100';
@@ -121,17 +124,18 @@ const SectionBlock: React.FC<SectionBlockProps> = memo(({ section, isActive, onS
 
 
 interface SongStructureEditorProps {
-    sections: SongSection[];
     activeSectionId: string | null;
     onSectionSelect: (id: string) => void;
-    onReorder: (startIndex: number, endIndex: number) => void;
-    onDelete: (id: string) => void;
-    onUpdateSection: (id: string, updates: { type: SectionType, label: string }) => void;
-    onAddSection: (type: SectionType) => void;
 }
 
-const SongStructureEditorComponent: React.FC<SongStructureEditorProps> = ({ sections, activeSectionId, onSectionSelect, onReorder, onDelete, onUpdateSection, onAddSection }) => {
+const SongStructureEditorComponent: React.FC<SongStructureEditorProps> = ({ activeSectionId, onSectionSelect }) => {
+    const songData = useContext(SongDataContext);
+    const actions = useContext(ActionsContext);
     const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+    if (!songData || !actions) return null;
+    const { onReorder, onAddSection } = actions;
+    const { structure: sections } = songData;
 
     const handleDragStart = (e: React.DragEvent, index: number) => {
         setDraggedIndex(index);
@@ -165,8 +169,6 @@ const SongStructureEditorComponent: React.FC<SongStructureEditorProps> = ({ sect
                         section={section}
                         isActive={section.id === activeSectionId}
                         onSelect={() => onSectionSelect(section.id)}
-                        onDelete={() => onDelete(section.id)}
-                        onUpdate={onUpdateSection}
                         onDragStart={(e) => handleDragStart(e, index)}
                         onDragOver={(e) => handleDragOver(e, index)}
                         onDrop={(e) => handleDrop(e, index)}

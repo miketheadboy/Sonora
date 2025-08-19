@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useReducer, createContext, useMemo } from 'react';
 import { Header } from './components/Header';
 import { Editor } from './components/Editor';
 import { Sidebar } from './components/Sidebar';
@@ -11,6 +11,128 @@ import { SongStructureEditor } from './components/SongStructureEditor';
 import { geminiService } from './services/geminiService';
 import { audioService } from './services/audioService';
 import type { GenerateIdeaParams, GenerateRhymesParams, GenerateSynonymsParams, GenerateWordAssociationsParams, GenerateBlendedIdeaParams, Chord, SongSection, SectionType, ContentPart, Author, AudioAnalysisResult, SongData, GetInspirationalSparkParams, ModifyLyricParams, MelodyNote, ProgressionStep, GenerateTitleParams, AnalysisType, GenerateEmotionalPaletteParams, GenerateObjectObservationParams } from './types';
+
+// --- State Management (Reducer & Context) ---
+
+type SongAction =
+    | { type: 'SET_SONG_DATA'; payload: SongData }
+    | { type: 'UPDATE_TITLE'; payload: string }
+    | { type: 'ADD_CONTENT_PART'; payload: { sectionId: string; part: ContentPart } }
+    | { type: 'UPDATE_CONTENT_PART'; payload: { sectionId: string; partId: string; newText: string } }
+    | { type: 'DELETE_CONTENT_PART'; payload: { sectionId: string; partId: string } }
+    | { type: 'ADD_SECTION'; payload: SongSection }
+    | { type: 'DELETE_SECTION'; payload: string }
+    | { type: 'UPDATE_SECTION'; payload: { sectionId: string; updates: { type: SectionType; label: string } } }
+    | { type: 'REORDER_SECTIONS'; payload: { startIndex: number; endIndex: number } }
+    | { type: 'APPLY_STRUCTURE'; payload: SongSection[] }
+    | { type: 'UPDATE_PROGRESSION'; payload: ProgressionStep[] }
+    | { type: 'UPDATE_PROGRESSION_STEP'; payload: { id: string; updates: { durationBeats: number } } }
+    | { type: 'UPDATE_KEY'; payload: string }
+    | { type: 'UPDATE_BPM'; payload: number }
+    | { type: 'UPDATE_TIME_SIGNATURE'; payload: string }
+    | { type: 'UPDATE_MELODY'; payload: MelodyNote[] }
+    | { type: 'UPDATE_AUDIO'; payload: { sectionId: string; audio: { base64: string; mimeType: string; blobUrl: string } } }
+    | { type: 'DELETE_AUDIO'; payload: string };
+
+const songReducer = (state: SongData, action: SongAction): SongData => {
+    switch (action.type) {
+        case 'SET_SONG_DATA':
+            return action.payload;
+        case 'UPDATE_TITLE':
+            return { ...state, title: action.payload };
+        case 'ADD_CONTENT_PART':
+            return {
+                ...state,
+                structure: state.structure.map(s =>
+                    s.id === action.payload.sectionId
+                        ? { ...s, content: [...s.content, action.payload.part] }
+                        : s
+                ),
+            };
+        case 'UPDATE_CONTENT_PART':
+            return {
+                ...state,
+                structure: state.structure.map(s =>
+                    s.id === action.payload.sectionId
+                        ? { ...s, content: s.content.map(p => p.id === action.payload.partId ? { ...p, text: action.payload.newText } : p) }
+                        : s
+                ),
+            };
+        case 'DELETE_CONTENT_PART':
+            return {
+                ...state,
+                structure: state.structure.map(s =>
+                    s.id === action.payload.sectionId
+                        ? { ...s, content: s.content.filter(p => p.id !== action.payload.partId) }
+                        : s
+                ),
+            };
+        case 'ADD_SECTION':
+            return { ...state, structure: [...state.structure, action.payload] };
+        case 'DELETE_SECTION': {
+            const newStructure = state.structure.filter(s => s.id !== action.payload);
+            return { ...state, structure: newStructure };
+        }
+        case 'UPDATE_SECTION':
+            return {
+                ...state,
+                structure: state.structure.map(s =>
+                    s.id === action.payload.sectionId
+                        ? { ...s, type: action.payload.updates.type, label: action.payload.updates.label }
+                        : s
+                ),
+            };
+        case 'REORDER_SECTIONS': {
+            const result = Array.from(state.structure);
+            const [removed] = result.splice(action.payload.startIndex, 1);
+            result.splice(action.payload.endIndex, 0, removed);
+            return { ...state, structure: result };
+        }
+        case 'APPLY_STRUCTURE':
+            return { ...state, structure: action.payload };
+        case 'UPDATE_PROGRESSION':
+            return { ...state, progression: action.payload };
+        case 'UPDATE_PROGRESSION_STEP':
+            return {
+                ...state,
+                progression: state.progression.map(step => step.id === action.payload.id ? { ...step, ...action.payload.updates } : step)
+            };
+        case 'UPDATE_KEY':
+            return { ...state, key: action.payload, progression: [] }; // Reset progression on key change
+        case 'UPDATE_BPM':
+            return { ...state, bpm: action.payload };
+        case 'UPDATE_TIME_SIGNATURE':
+            return { ...state, timeSignature: action.payload };
+        case 'UPDATE_MELODY':
+            return { ...state, melody: action.payload };
+        case 'UPDATE_AUDIO':
+            return {
+                ...state,
+                structure: state.structure.map(s =>
+                    s.id === action.payload.sectionId ? { ...s, audio: action.payload.audio } : s
+                ),
+            };
+        case 'DELETE_AUDIO': {
+            return {
+                ...state,
+                structure: state.structure.map(s => {
+                    if (s.id === action.payload) {
+                        const { audio, ...rest } = s;
+                        if (audio?.blobUrl) URL.revokeObjectURL(audio.blobUrl);
+                        return rest;
+                    }
+                    return s;
+                }),
+            };
+        }
+        default:
+            return state;
+    }
+};
+
+export const SongDataContext = createContext<SongData | null>(null);
+export const ActionsContext = createContext<any | null>(null);
+
 
 const initialLyrics = `(Verse 1)
 White walls and carbon paper lines
@@ -181,7 +303,7 @@ function useDebounce<T>(value: T, delay: number): T {
 
 
 const App: React.FC = () => {
-    const [songData, setSongData] = useState<SongData>(getInitialSongData);
+    const [songData, dispatch] = useReducer(songReducer, getInitialSongData());
     const [activeSectionId, setActiveSectionId] = useState<string | null>(songData.structure.length > 0 ? songData.structure[0].id : null);
     
     // UI State
@@ -209,7 +331,6 @@ const App: React.FC = () => {
     const [playheadPosition, setPlayheadPosition] = useState(0); // Position in beats
     const animationFrameRef = useRef<number | null>(null);
     const playbackStartTimeRef = useRef<number>(0);
-
 
     const activeSection = songData.structure.find(s => s.id === activeSectionId);
     
@@ -250,7 +371,6 @@ const App: React.FC = () => {
         setIsPlaying(false);
     }, []);
     
-    // --- AI & Tool Handlers ---
     const withLoading = useCallback(<T extends any[]>(fn: (...args: T) => Promise<void>) => {
         return async (...args: T) => {
             setIsLoading(true);
@@ -265,93 +385,60 @@ const App: React.FC = () => {
         };
     }, [handleError]);
 
-    // --- Structure & Content Handlers ---
+    // --- Action Handlers ---
+
     const handleUpdateTitle = useCallback((newTitle: string) => {
-        setSongData(prev => ({ ...prev, title: newTitle.trim() || 'Untitled Song' }));
+        dispatch({ type: 'UPDATE_TITLE', payload: newTitle.trim() || 'Untitled Song' });
     }, []);
 
     const handleAddContentPart = useCallback((sectionId: string, author: Author, text: string) => {
         if (!text.trim()) return;
-        const newPart: ContentPart = {
-            id: `part-${Date.now()}`,
-            author,
-            text,
-        };
-        setSongData(prev => ({
-            ...prev,
-            structure: prev.structure.map(s => s.id === sectionId ? { ...s, content: [...s.content, newPart] } : s)
-        }));
+        const newPart: ContentPart = { id: `part-${Date.now()}`, author, text };
+        dispatch({ type: 'ADD_CONTENT_PART', payload: { sectionId, part: newPart } });
     }, []);
     
     const handleUpdateContentPart = useCallback((sectionId: string, partId: string, newText: string) => {
-        setSongData(prev => ({
-            ...prev,
-            structure: prev.structure.map(s => 
-                s.id === sectionId 
-                ? { ...s, content: s.content.map(p => p.id === partId ? { ...p, text: newText } : p) } 
-                : s
-            )
-        }));
+        dispatch({ type: 'UPDATE_CONTENT_PART', payload: { sectionId, partId, newText } });
         if (lyricSuggestions?.partId === partId) {
             setLyricSuggestions(null);
         }
     }, [lyricSuggestions?.partId]);
 
     const handleDeleteContentPart = useCallback((sectionId: string, partId: string) => {
-        setSongData(prev => ({
-            ...prev,
-            structure: prev.structure.map(s => s.id === sectionId ? { ...s, content: s.content.filter(p => p.id !== partId) } : s)
-        }));
+        dispatch({ type: 'DELETE_CONTENT_PART', payload: { sectionId, partId } });
     }, []);
 
     const handleAddSection = useCallback((type: SectionType) => {
-        setSongData(prev => {
-            const existingOfType = prev.structure.filter(s => s.type === type).length;
-            const newSection: SongSection = {
-                id: `section-${Date.now()}`,
-                type,
-                label: `${type} ${existingOfType + 1}`,
-                content: [],
-            };
-            setActiveSectionId(newSection.id);
-            return {...prev, structure: [...prev.structure, newSection]};
-        });
-    }, []);
+        const existingOfType = songData.structure.filter(s => s.type === type).length;
+        const newSection: SongSection = {
+            id: `section-${Date.now()}`,
+            type,
+            label: `${type} ${existingOfType + 1}`,
+            content: [],
+        };
+        dispatch({ type: 'ADD_SECTION', payload: newSection });
+        setActiveSectionId(newSection.id);
+    }, [songData.structure]);
 
     const handleDeleteSection = useCallback((sectionId: string) => {
-        setSongData(prev => {
-            const newStructure = prev.structure.filter(s => s.id !== sectionId);
-            if (activeSectionId === sectionId) {
-                setActiveSectionId(newStructure.length > 0 ? newStructure[0].id : null);
-            }
-            return {...prev, structure: newStructure};
-        });
-    }, [activeSectionId]);
+        const newStructure = songData.structure.filter(s => s.id !== sectionId);
+        if (activeSectionId === sectionId) {
+            setActiveSectionId(newStructure.length > 0 ? newStructure[0].id : null);
+        }
+        dispatch({ type: 'DELETE_SECTION', payload: sectionId });
+    }, [activeSectionId, songData.structure]);
     
     const handleUpdateSection = useCallback((sectionId: string, updates: { type: SectionType, label: string }) => {
-        setSongData(prev => ({
-            ...prev,
-            structure: prev.structure.map(s => 
-                s.id === sectionId 
-                ? { ...s, type: updates.type, label: updates.label } 
-                : s
-            )
-        }));
+        dispatch({ type: 'UPDATE_SECTION', payload: { sectionId, updates } });
     }, []);
 
     const handleReorderSections = useCallback((startIndex: number, endIndex: number) => {
-        setSongData(prev => {
-            const result = Array.from(prev.structure);
-            const [removed] = result.splice(startIndex, 1);
-            result.splice(endIndex, 0, removed);
-            return {...prev, structure: result};
-        });
+        dispatch({ type: 'REORDER_SECTIONS', payload: { startIndex, endIndex } });
     }, []);
     
     const handleApplyStructure = useCallback(withLoading(async (structureString: string) => {
         const sectionTypes = structureString.split(',').map(s => s.trim() as SectionType);
         const typeCounts: { [key: string]: number } = {};
-
         const newStructure: SongSection[] = sectionTypes.map((type, index) => {
             typeCounts[type] = (typeCounts[type] || 0) + 1;
             return {
@@ -361,16 +448,15 @@ const App: React.FC = () => {
                 content: [{ id: `part-${Date.now()}-${index}`, author: 'user', text: `[${type} lyrics go here...]`}],
             };
         });
-        setSongData(prev => ({...prev, structure: newStructure}));
+        dispatch({ type: 'APPLY_STRUCTURE', payload: newStructure });
         setActiveSectionId(newStructure.length > 0 ? newStructure[0].id : null);
     }), [withLoading]);
-    
 
     const handleFindRhymes = useCallback(withLoading(async (params: GenerateRhymesParams) => {
         if (!params.word.trim()) return;
         const results = await geminiService.findRhymes(params);
         setRhymes(results);
-        setGeneratedIdea(null); // Clear other results
+        setGeneratedIdea(null);
     }), [withLoading]);
     
     const handleFindSynonyms = useCallback(withLoading(async (params: GenerateSynonymsParams) => {
@@ -475,34 +561,15 @@ const App: React.FC = () => {
         setIsAnalysisModalOpen(true);
     }), [withLoading, songData.structure, songData.progression]);
     
-    // --- Audio Handlers ---
     const handleUpdateAudio = useCallback(async (sectionId: string, audioBlob: Blob) => {
         const base64 = await blobToBase64(audioBlob);
         const mimeType = audioBlob.type;
-        setSongData(prev => ({
-            ...prev,
-            structure: prev.structure.map(s => 
-                s.id === sectionId 
-                ? { ...s, audio: { base64, mimeType, blobUrl: URL.createObjectURL(audioBlob) } } 
-                : s
-            )
-        }));
+        const blobUrl = URL.createObjectURL(audioBlob);
+        dispatch({ type: 'UPDATE_AUDIO', payload: { sectionId, audio: { base64, mimeType, blobUrl } } });
     }, []);
 
     const handleDeleteAudio = useCallback((sectionId: string) => {
-        setSongData(prev => ({
-            ...prev,
-            structure: prev.structure.map(s => {
-                if (s.id === sectionId) {
-                    const { audio, ...rest } = s;
-                    if (audio?.blobUrl) {
-                        URL.revokeObjectURL(audio.blobUrl);
-                    }
-                    return rest;
-                }
-                return s;
-            })
-        }));
+        dispatch({ type: 'DELETE_AUDIO', payload: sectionId });
     }, []);
 
     const handleAnalyzeAudio = useCallback(withLoading(async (sectionId: string) => {
@@ -513,11 +580,10 @@ const App: React.FC = () => {
         setIsAnalysisModalOpen(true);
     }), [withLoading, songData.structure]);
 
-    // --- Music & Playback Handlers ---
     const handleGenerateLibrary = useCallback(withLoading(async (key: string) => {
         const chords = await geminiService.getChordLibrary({ key });
         setChordLibrary(chords);
-        setSongData(prev => ({ ...prev, key }));
+        dispatch({ type: 'UPDATE_KEY', payload: key });
     }), [withLoading]);
 
     useEffect(() => {
@@ -527,26 +593,23 @@ const App: React.FC = () => {
     }, [songData.key, chordLibrary.length, handleGenerateLibrary]);
 
     const handleUpdateProgression = useCallback((newProgression: ProgressionStep[]) => {
-        setSongData(prev => ({ ...prev, progression: newProgression }));
+        dispatch({ type: 'UPDATE_PROGRESSION', payload: newProgression });
     }, []);
     
     const handleUpdateProgressionStep = useCallback((id: string, updates: { durationBeats: number }) => {
-        setSongData(prev => ({
-            ...prev,
-            progression: prev.progression.map(step => step.id === id ? { ...step, ...updates } : step)
-        }))
+        dispatch({ type: 'UPDATE_PROGRESSION_STEP', payload: { id, updates } });
     }, []);
 
     const handleUpdateBpm = useCallback((newBpm: number) => {
-        setSongData(prev => ({ ...prev, bpm: newBpm }));
+        dispatch({ type: 'UPDATE_BPM', payload: newBpm });
     }, []);
 
     const handleUpdateTimeSignature = useCallback((newTimeSignature: string) => {
-        setSongData(prev => ({ ...prev, timeSignature: newTimeSignature }));
+        dispatch({ type: 'UPDATE_TIME_SIGNATURE', payload: newTimeSignature });
     }, []);
 
     const handleUpdateMelody = useCallback((newMelody: MelodyNote[]) => {
-        setSongData(prev => ({ ...prev, melody: newMelody }));
+        dispatch({ type: 'UPDATE_MELODY', payload: newMelody });
     }, []);
 
     const animationLoop = useCallback(() => {
@@ -575,11 +638,10 @@ const App: React.FC = () => {
         setPlayheadPosition(0);
     }, []);
 
-    // --- Project Handlers ---
     const handleNewSong = useCallback(() => {
         if (window.confirm("Are you sure? This will create a blank song and erase your current work from this browser session.")) {
             localStorage.removeItem('sonora-ai-song');
-            setSongData({
+            const newSong = {
                 title: 'Untitled Song',
                 structure: [],
                 progression: [],
@@ -587,7 +649,8 @@ const App: React.FC = () => {
                 bpm: 120,
                 timeSignature: '4/4',
                 melody: [],
-            });
+            };
+            dispatch({ type: 'SET_SONG_DATA', payload: newSong });
             setActiveSectionId(null);
             handleGenerateLibrary('C');
         }
@@ -595,14 +658,11 @@ const App: React.FC = () => {
     
     const handleExport = useCallback(() => {
         const { title, structure, progression, key, bpm, timeSignature } = songData;
-        
         let content = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${title}</title><style>body{font-family:serif;line-height:1.6;color:#3a3127;background:#f5f3f0;padding:2rem;}h1{color:#a33100;}h2{color:#115e59;border-bottom:1px solid #e5e2de;padding-bottom:0.5rem;}.metadata{background:#fffffb;border:1px solid #e5e2de;padding:1rem;margin-bottom:2rem;}.lyrics{white-space:pre-wrap;}</style></head><body><h1>${title}</h1><div class="metadata"><strong>Key:</strong> ${key} | <strong>BPM:</strong> ${bpm} | <strong>Time Signature:</strong> ${timeSignature}<br><strong>Progression:</strong> ${progression.map(p => `${p.chord.name} (${p.durationBeats} beats)`).join(' - ') || 'N/A'}</div>`;
-        
         structure.forEach(section => {
             content += `<h2>${section.label}</h2>\n<div class="lyrics">\n${section.content.map(p => p.text).join('\n\n')}\n</div>\n`;
         });
         content += '</body></html>';
-
         const blob = new Blob([content], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -614,14 +674,7 @@ const App: React.FC = () => {
 
     const handleShare = useCallback(async (): Promise<boolean> => {
         try {
-            const storableData: Partial<SongData> = {
-                ...songData,
-                structure: songData.structure.map(section => {
-                    if (!section.audio) return section;
-                    const { blobUrl, ...storableAudio } = section.audio;
-                    return { ...section, audio: storableAudio };
-                }),
-            };
+            const storableData: Partial<SongData> = { ...songData, structure: songData.structure.map(section => { if (!section.audio) return section; const { blobUrl, ...storableAudio } = section.audio; return { ...section, audio: storableAudio }; }) };
             const jsonData = JSON.stringify(storableData);
             const base64Data = bytesToBase64(new TextEncoder().encode(jsonData));
             const shareUrl = `${window.location.origin}${window.location.pathname}#data=${base64Data}`;
@@ -634,100 +687,111 @@ const App: React.FC = () => {
         }
     }, [songData]);
 
-    const getGridCols = () => {
+    const actions = useMemo(() => ({
+        onUpdateTitle: handleUpdateTitle,
+        onAddContentPart: handleAddContentPart,
+        onUpdateContentPart: handleUpdateContentPart,
+        onDeleteContentPart: handleDeleteContentPart,
+        onCowrite: handleCowrite,
+        onModifyLyric: handleModifyLyric,
+        onAddSection: handleAddSection,
+        onDeleteSection: handleDeleteSection,
+        onUpdateSection: handleUpdateSection,
+        onReorderSections: handleReorderSections,
+        onUpdateAudio: handleUpdateAudio,
+        onDeleteAudio: handleDeleteAudio,
+        onAnalyzeAudio: handleAnalyzeAudio,
+        onUpdateProgression: handleUpdateProgression,
+        onUpdateProgressionStep: handleUpdateProgressionStep,
+        onUpdateMelody: handleUpdateMelody,
+        onUpdateBpm: handleUpdateBpm,
+        onUpdateTimeSignature: handleUpdateTimeSignature,
+        onGenerateLibrary: handleGenerateLibrary,
+        onApplyStructure: handleApplyStructure,
+        onAnalyzeSong: handleAnalyzeSong,
+        onSuggestStructures: handleSuggestStructures,
+    }), [handleUpdateTitle, handleAddContentPart, handleUpdateContentPart, handleDeleteContentPart, handleCowrite, handleModifyLyric, handleAddSection, handleDeleteSection, handleUpdateSection, handleReorderSections, handleUpdateAudio, handleDeleteAudio, handleAnalyzeAudio, handleUpdateProgression, handleUpdateProgressionStep, handleUpdateMelody, handleUpdateBpm, handleUpdateTimeSignature, handleGenerateLibrary, handleApplyStructure, handleAnalyzeSong, handleSuggestStructures]);
+    
+    const gridCols = useMemo(() => {
         if (isStructurePanelOpen && isToolsPanelOpen) return 'grid-cols-[3fr_6fr_3fr]';
         if (isStructurePanelOpen) return 'grid-cols-[3fr_9fr_0fr]';
         if (isToolsPanelOpen) return 'grid-cols-[0fr_9fr_3fr]';
         return 'grid-cols-[0fr_12fr_0fr]';
-    }
+    }, [isStructurePanelOpen, isToolsPanelOpen]);
 
     return (
-        <div className="h-screen w-screen bg-cream flex flex-col font-sans">
-            <Header 
-                title={songData.title}
-                onUpdateTitle={handleUpdateTitle}
-                onNewSong={handleNewSong}
-                onExport={handleExport}
-                onShare={handleShare}
-                onToggleStructure={() => setIsStructurePanelOpen(prev => !prev)}
-                onToggleTools={() => setIsToolsPanelOpen(prev => !prev)}
-            />
-            <main className={`flex-grow grid ${getGridCols()} gap-6 p-4 md:p-6 overflow-hidden transition-all duration-300 ease-in-out`}>
-                <aside className={`transition-all duration-300 ease-in-out overflow-hidden ${!isStructurePanelOpen && 'scale-x-0 -mr-6 opacity-0'}`}>
-                     <div className="bg-cream-100/50 rounded-lg p-4 h-full overflow-y-auto">
-                        <SongStructureEditor 
-                           sections={songData.structure}
-                           activeSectionId={activeSectionId}
-                           onSectionSelect={setActiveSectionId}
-                           onReorder={handleReorderSections}
-                           onDelete={handleDeleteSection}
-                           onUpdateSection={handleUpdateSection}
-                           onAddSection={handleAddSection}
+        <SongDataContext.Provider value={songData}>
+        <ActionsContext.Provider value={actions}>
+            <div className="h-screen w-screen bg-cream flex flex-col font-sans">
+                <Header 
+                    onNewSong={handleNewSong}
+                    onExport={handleExport}
+                    onShare={handleShare}
+                    onToggleStructure={() => setIsStructurePanelOpen(prev => !prev)}
+                    onToggleTools={() => setIsToolsPanelOpen(prev => !prev)}
+                />
+                <main className={`flex-grow grid ${gridCols} gap-6 p-4 md:p-6 overflow-hidden transition-all duration-300 ease-in-out`}>
+                    <aside className={`transition-all duration-300 ease-in-out overflow-hidden ${!isStructurePanelOpen && 'scale-x-0 -mr-6 opacity-0'}`}>
+                        <div className="bg-cream-100/50 rounded-lg p-4 h-full overflow-y-auto">
+                            <SongStructureEditor 
+                               activeSectionId={activeSectionId}
+                               onSectionSelect={setActiveSectionId}
+                            />
+                        </div>
+                    </aside>
+                    
+                    <div className="transition-all duration-300 ease-in-out h-full">
+                        <Editor
+                            activeSection={activeSection}
+                            lyricSuggestions={lyricSuggestions}
                         />
-                     </div>
-                </aside>
-                
-                <div className="transition-all duration-300 ease-in-out h-full">
-                     <Editor
-                        activeSection={activeSection}
-                        onAddContentPart={handleAddContentPart}
-                        onUpdateContentPart={handleUpdateContentPart}
-                        onDeleteContentPart={handleDeleteContentPart}
-                        onCowrite={handleCowrite}
-                        onModifyLyric={handleModifyLyric}
-                        onUpdateAudio={handleUpdateAudio}
-                        onDeleteAudio={handleDeleteAudio}
-                        onAnalyzeAudio={handleAnalyzeAudio}
-                        lyricSuggestions={lyricSuggestions}
-                    />
-                </div>
-                
-                <aside className={`transition-all duration-300 ease-in-out overflow-hidden ${!isToolsPanelOpen && 'scale-x-0 -ml-6 opacity-0'}`}>
-                    <Sidebar
-                        songData={songData}
-                        isPlaying={isPlaying}
-                        playheadPosition={playheadPosition}
-                        onGenerateIdea={handleGenerateIdea}
-                        onGenerateBlendedIdea={handleGenerateBlendedIdea}
-                        onFindRhymes={handleFindRhymes}
-                        onFindSynonyms={handleFindSynonyms}
-                        onGenerateWordAssociations={handleGenerateWordAssociations}
-                        onGeneratePrompt={handleGeneratePrompt}
-                        onGenerateInspirationalSpark={handleGetInspirationalSpark}
-                        onGenerateTitles={handleGenerateTitles}
-                        onGenerateEmotionalPalette={handleGenerateEmotionalPalette}
-                        onGenerateObjectObservation={handleGenerateObjectObservation}
-                        onSuggestStructures={handleSuggestStructures}
-                        onAnalyzeSong={handleAnalyzeSong}
-                        onApplyStructure={handleApplyStructure}
-                        rhymes={rhymes}
-                        synonyms={synonyms}
-                        wordAssociations={wordAssociations}
-                        creativePrompt={creativePrompt}
-                        inspirationalSpark={inspirationalSpark}
-                        structureSuggestions={structureSuggestions}
-                        chordLibrary={chordLibrary}
-                        onUpdateProgression={handleUpdateProgression}
-                        onUpdateProgressionStep={handleUpdateProgressionStep}
-                        onGenerateLibrary={handleGenerateLibrary}
-                        onPlay={handlePlay}
-                        onStop={handleStop}
-                        onUpdateBpm={handleUpdateBpm}
-                        onUpdateTimeSignature={handleUpdateTimeSignature}
-                        onUpdateMelody={handleUpdateMelody}
-                    />
-                </aside>
-            </main>
+                    </div>
+                    
+                    <aside className={`transition-all duration-300 ease-in-out overflow-hidden ${!isToolsPanelOpen && 'scale-x-0 -ml-6 opacity-0'}`}>
+                        <Sidebar
+                            isPlaying={isPlaying}
+                            playheadPosition={playheadPosition}
+                            // Phase 1: Spark & Structure
+                            onGenerateIdea={handleGenerateIdea}
+                            onGenerateBlendedIdea={handleGenerateBlendedIdea}
+                            onGenerateTitles={handleGenerateTitles}
+                            onGenerateEmotionalPalette={handleGenerateEmotionalPalette}
+                            onGenerateObjectObservation={handleGenerateObjectObservation}
+                            onGeneratePrompt={handleGeneratePrompt}
+                            onGenerateInspirationalSpark={handleGetInspirationalSpark}
+                            creativePrompt={creativePrompt}
+                            inspirationalSpark={inspirationalSpark}
+                            structureSuggestions={structureSuggestions}
+                            onSuggestStructures={handleSuggestStructures}
+                            onApplyStructure={handleApplyStructure}
+                            // Phase 2: Lyric Craft
+                            onFindRhymes={handleFindRhymes}
+                            onFindSynonyms={handleFindSynonyms}
+                            onGenerateWordAssociations={handleGenerateWordAssociations}
+                            rhymes={rhymes}
+                            synonyms={synonyms}
+                            wordAssociations={wordAssociations}
+                            // Phase 3: Music & Harmony
+                            onPlay={handlePlay}
+                            onStop={handleStop}
+                            chordLibrary={chordLibrary}
+                            // Phase 4: Review & Refine
+                            onAnalyzeSong={handleAnalyzeSong}
+                        />
+                    </aside>
+                </main>
 
-            {isIdeaModalOpen && generatedIdea && (
-                <GeneratedIdeaModal idea={generatedIdea} onClose={() => setIsIdeaModalOpen(false)} />
-            )}
-            {isAnalysisModalOpen && songAnalysis && (
-                <AnalysisModal analysis={songAnalysis} onClose={() => setIsAnalysisModalOpen(false)} />
-            )}
-            {isLoading && <LoadingOverlay />}
-            {error && <ErrorDisplay message={error} onClose={() => setError(null)} />}
-        </div>
+                {isIdeaModalOpen && generatedIdea && (
+                    <GeneratedIdeaModal idea={generatedIdea} onClose={() => setIsIdeaModalOpen(false)} />
+                )}
+                {isAnalysisModalOpen && songAnalysis && (
+                    <AnalysisModal analysis={songAnalysis} onClose={() => setIsAnalysisModalOpen(false)} />
+                )}
+                {isLoading && <LoadingOverlay />}
+                {error && <ErrorDisplay message={error} onClose={() => setError(null)} />}
+            </div>
+        </ActionsContext.Provider>
+        </SongDataContext.Provider>
     );
 };
 

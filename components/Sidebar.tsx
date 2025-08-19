@@ -1,34 +1,16 @@
 
 import React, { memo } from 'react';
-import type { SongData, Chord, MelodyNote, ProgressionStep, GenerateIdeaParams, GenerateBlendedIdeaParams, GenerateRhymesParams, GenerateSynonymsParams, GenerateWordAssociationsParams, GetInspirationalSparkParams, GenerateTitleParams, GenerateEmotionalPaletteParams, GenerateObjectObservationParams, AnalysisType } from '../types';
+import type { GenerateIdeaParams, GenerateBlendedIdeaParams, GenerateRhymesParams, GenerateSynonymsParams, GenerateWordAssociationsParams, GetInspirationalSparkParams, GenerateTitleParams, GenerateEmotionalPaletteParams, GenerateObjectObservationParams, AnalysisType } from '../types';
 import { Accordion } from './Accordion';
-import { MusicPanel } from './panels/MusicPanel';
-import { AIAssistPanel } from './panels/AIAssistPanel';
-import { InspirationPanel } from './panels/InspirationPanel';
-import { AnalysisPanel } from './panels/AnalysisPanel';
+import { SparkAndStructurePanel } from './panels/SparkAndStructurePanel';
+import { LyricCraftPanel } from './panels/LyricCraftPanel';
+import { MusicAndHarmonyPanel } from './panels/MusicAndHarmonyPanel';
+import { ReviewAndRefinePanel } from './panels/ReviewAndRefinePanel';
 
 interface SidebarProps {
-    songData: SongData;
     isPlaying: boolean;
     playheadPosition: number;
-    // AI Assist
-    onFindRhymes: (params: GenerateRhymesParams) => void;
-    onFindSynonyms: (params: GenerateSynonymsParams) => void;
-    onGenerateWordAssociations: (params: GenerateWordAssociationsParams) => void;
-    rhymes: string[];
-    synonyms: string[];
-    wordAssociations: string[];
-    // Music
-    chordLibrary: Chord[];
-    onUpdateProgression: (progression: ProgressionStep[]) => void;
-    onUpdateProgressionStep: (id: string, updates: { durationBeats: number }) => void;
-    onGenerateLibrary: (key: string) => void;
-    onPlay: () => void;
-    onStop: () => void;
-    onUpdateBpm: (bpm: number) => void;
-    onUpdateTimeSignature: (ts: string) => void;
-    onUpdateMelody: (melody: MelodyNote[]) => void;
-    // Inspiration
+    // Phase 1
     onGenerateIdea: (params: GenerateIdeaParams) => void;
     onGenerateBlendedIdea: (params: GenerateBlendedIdeaParams) => void;
     onGenerateTitles: (params: GenerateTitleParams) => void;
@@ -38,45 +20,30 @@ interface SidebarProps {
     onGenerateInspirationalSpark: (params: GetInspirationalSparkParams) => void;
     creativePrompt: string | null;
     inspirationalSpark: string | null;
-    // Analysis
-    onAnalyzeSong: (analysisType: AnalysisType) => void;
-    onSuggestStructures: () => void;
     structureSuggestions: string[];
+    onSuggestStructures: () => void;
     onApplyStructure: (structure: string) => void;
+    // Phase 2
+    onFindRhymes: (params: GenerateRhymesParams) => void;
+    onFindSynonyms: (params: GenerateSynonymsParams) => void;
+    onGenerateWordAssociations: (params: GenerateWordAssociationsParams) => void;
+    rhymes: string[];
+    synonyms: string[];
+    wordAssociations: string[];
+    // Phase 3
+    onPlay: () => void;
+    onStop: () => void;
+    chordLibrary: any[];
+    // Phase 4
+    onAnalyzeSong: (analysisType: AnalysisType) => void;
 }
 
 const SidebarComponent: React.FC<SidebarProps> = (props) => {
     return (
         <div className="bg-cream-100/50 h-full flex flex-col overflow-y-auto">
             <Accordion allowMultipleOpen={false} defaultOpenIndex={0}>
-                <Accordion.Section title="Music">
-                    <MusicPanel
-                        songData={props.songData}
-                        isPlaying={props.isPlaying}
-                        playheadPosition={props.playheadPosition}
-                        chordLibrary={props.chordLibrary}
-                        onUpdateProgression={props.onUpdateProgression}
-                        onUpdateProgressionStep={props.onUpdateProgressionStep}
-                        onGenerateLibrary={props.onGenerateLibrary}
-                        onPlay={props.onPlay}
-                        onStop={props.onStop}
-                        onUpdateBpm={props.onUpdateBpm}
-                        onUpdateTimeSignature={props.onUpdateTimeSignature}
-                        onUpdateMelody={props.onUpdateMelody}
-                    />
-                </Accordion.Section>
-                <Accordion.Section title="AI Assist">
-                    <AIAssistPanel 
-                        onFindRhymes={props.onFindRhymes}
-                        onFindSynonyms={props.onFindSynonyms}
-                        onGenerateWordAssociations={props.onGenerateWordAssociations}
-                        rhymes={props.rhymes}
-                        synonyms={props.synonyms}
-                        wordAssociations={props.wordAssociations}
-                    />
-                </Accordion.Section>
-                <Accordion.Section title="Inspiration">
-                    <InspirationPanel
+                <Accordion.Section title="Phase 1: Spark & Structure">
+                    <SparkAndStructurePanel
                         onGenerateIdea={props.onGenerateIdea}
                         onGenerateBlendedIdea={props.onGenerateBlendedIdea}
                         onGenerateTitles={props.onGenerateTitles}
@@ -86,15 +53,33 @@ const SidebarComponent: React.FC<SidebarProps> = (props) => {
                         onGenerateInspirationalSpark={props.onGenerateInspirationalSpark}
                         creativePrompt={props.creativePrompt}
                         inspirationalSpark={props.inspirationalSpark}
+                        structureSuggestions={props.structureSuggestions}
+                        onSuggestStructures={props.onSuggestStructures}
+                        onApplyStructure={props.onApplyStructure}
                     />
                 </Accordion.Section>
-                <Accordion.Section title="Analysis">
-                    <AnalysisPanel 
-                        songData={props.songData}
+                <Accordion.Section title="Phase 2: Lyric Craft">
+                    <LyricCraftPanel 
+                        onFindRhymes={props.onFindRhymes}
+                        onFindSynonyms={props.onFindSynonyms}
+                        onGenerateWordAssociations={props.onGenerateWordAssociations}
+                        rhymes={props.rhymes}
+                        synonyms={props.synonyms}
+                        wordAssociations={props.wordAssociations}
+                    />
+                </Accordion.Section>
+                <Accordion.Section title="Phase 3: Music & Harmony">
+                    <MusicAndHarmonyPanel
+                        isPlaying={props.isPlaying}
+                        playheadPosition={props.playheadPosition}
+                        chordLibrary={props.chordLibrary}
+                        onPlay={props.onPlay}
+                        onStop={props.onStop}
+                    />
+                </Accordion.Section>
+                <Accordion.Section title="Phase 4: Review & Refine">
+                    <ReviewAndRefinePanel 
                         onAnalyzeSong={props.onAnalyzeSong}
-                        onSuggestStructures={props.onSuggestStructures}
-                        structureSuggestions={props.structureSuggestions}
-                        onApplyStructure={props.onApplyStructure}
                     />
                 </Accordion.Section>
             </Accordion>

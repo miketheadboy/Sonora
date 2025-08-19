@@ -1,10 +1,9 @@
 
-import React, { useState, useEffect, memo } from 'react';
+import React, { useState, useEffect, memo, useContext } from 'react';
 import { MusicNoteIcon, FilePlusIcon, DownloadIcon, ShareIcon, Bars3Icon } from './icons';
+import { SongDataContext, ActionsContext } from '../App';
 
 interface HeaderProps {
-    title: string;
-    onUpdateTitle: (newTitle: string) => void;
     onNewSong: () => void;
     onExport: () => void;
     onShare: () => Promise<boolean>;
@@ -12,23 +11,31 @@ interface HeaderProps {
     onToggleTools: () => void;
 }
 
-const HeaderComponent: React.FC<HeaderProps> = ({ title, onUpdateTitle, onNewSong, onExport, onShare, onToggleStructure, onToggleTools }) => {
+const HeaderComponent: React.FC<HeaderProps> = ({ onNewSong, onExport, onShare, onToggleStructure, onToggleTools }) => {
+    const songData = useContext(SongDataContext);
+    const actions = useContext(ActionsContext);
+    
     const [linkCopied, setLinkCopied] = useState(false);
-    const [currentTitle, setCurrentTitle] = useState(title);
+    const [currentTitle, setCurrentTitle] = useState(songData?.title || '');
 
     useEffect(() => {
-        setCurrentTitle(title);
-    }, [title]);
+        if (songData) {
+            setCurrentTitle(songData.title);
+        }
+    }, [songData?.title]);
+
+    if (!songData || !actions) return null;
+    const { onUpdateTitle } = actions;
 
     const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setCurrentTitle(e.target.value);
     };
     
     const handleTitleBlur = () => {
-        if (currentTitle.trim() && currentTitle !== title) {
+        if (currentTitle.trim() && currentTitle !== songData.title) {
             onUpdateTitle(currentTitle.trim());
         } else {
-            setCurrentTitle(title); // Revert if empty or unchanged
+            setCurrentTitle(songData.title); // Revert if empty or unchanged
         }
     };
     

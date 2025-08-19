@@ -1,26 +1,23 @@
-import React from 'react';
+
+import React, { useContext } from 'react';
 import { TIME_SIGNATURES } from '../constants';
 import { PlayCircleIcon, StopCircleIcon } from './icons';
+import { SongDataContext, ActionsContext } from '../App';
 
 interface TransportControlsProps {
-    bpm: number;
-    timeSignature: string;
     isPlaying: boolean;
-    onBpmChange: (bpm: number) => void;
-    onTimeSignatureChange: (ts: string) => void;
     onPlay: () => void;
     onStop: () => void;
 }
 
-export const TransportControls: React.FC<TransportControlsProps> = ({
-    bpm,
-    timeSignature,
-    isPlaying,
-    onBpmChange,
-    onTimeSignatureChange,
-    onPlay,
-    onStop
-}) => {
+export const TransportControls: React.FC<TransportControlsProps> = ({ isPlaying, onPlay, onStop }) => {
+    const songData = useContext(SongDataContext);
+    const actions = useContext(ActionsContext);
+
+    if (!songData || !actions) return null;
+    const { bpm, timeSignature } = songData;
+    const { onUpdateBpm, onUpdateTimeSignature } = actions;
+
     const selectClasses = "bg-cream-100 text-sepia-900 border border-sepia-300 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-orange-700 focus:border-orange-700";
     const labelClasses = "text-xs text-sepia-800 block mb-1 font-semibold text-center";
 
@@ -49,7 +46,7 @@ export const TransportControls: React.FC<TransportControlsProps> = ({
                         min="40"
                         max="220"
                         value={bpm}
-                        onChange={(e) => onBpmChange(Number(e.target.value))}
+                        onChange={(e) => onUpdateBpm(Number(e.target.value))}
                         className="w-24 h-2 bg-sepia-300 rounded-lg appearance-none cursor-pointer"
                     />
                 </div>
@@ -57,7 +54,7 @@ export const TransportControls: React.FC<TransportControlsProps> = ({
                      <label htmlFor="time-sig-select" className={labelClasses}>
                         Time Sig
                     </label>
-                    <select id="time-sig-select" value={timeSignature} onChange={(e) => onTimeSignatureChange(e.target.value)} className={selectClasses}>
+                    <select id="time-sig-select" value={timeSignature} onChange={(e) => onUpdateTimeSignature(e.target.value)} className={selectClasses}>
                         {TIME_SIGNATURES.map(ts => <option key={ts} value={ts}>{ts}</option>)}
                     </select>
                 </div>

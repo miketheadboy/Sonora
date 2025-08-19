@@ -1,16 +1,12 @@
 
-import React, { useState, memo } from 'react';
+import React, { useState, memo, useContext } from 'react';
 import type { Chord, ProgressionStep } from '../types';
 import { MUSICAL_KEYS, CHORD_FUNCTION_COLORS } from '../constants';
 import { TrashIcon, PlusIcon, MinusIcon } from './icons';
+import { SongDataContext, ActionsContext } from '../App';
 
 interface ChordRiverProps {
     library: Chord[];
-    progression: ProgressionStep[];
-    currentKey: string;
-    onUpdateProgression: (progression: ProgressionStep[]) => void;
-    onUpdateProgressionStep: (id: string, updates: { durationBeats: number }) => void;
-    onGenerateLibrary: (key: string) => void;
 }
 
 const ChordBlock: React.FC<{ 
@@ -40,12 +36,17 @@ const ChordBlock: React.FC<{
     );
 });
 
-const ChordRiverComponent: React.FC<ChordRiverProps> = ({ library, progression, currentKey, onUpdateProgression, onUpdateProgressionStep, onGenerateLibrary }) => {
+const ChordRiverComponent: React.FC<ChordRiverProps> = ({ library }) => {
+    const songData = useContext(SongDataContext);
+    const actions = useContext(ActionsContext);
     const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+    if (!songData || !actions) return null;
+    const { progression, key: currentKey } = songData;
+    const { onUpdateProgression, onUpdateProgressionStep, onGenerateLibrary } = actions;
 
     const handleKeyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         onGenerateLibrary(e.target.value);
-        onUpdateProgression([]); // Clear progression when key changes
     };
     
     // Drag from library

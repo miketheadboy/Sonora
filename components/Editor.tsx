@@ -1,18 +1,11 @@
 
-import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, memo, useContext } from 'react';
 import type { SongSection, ContentPart, Author, LyricModificationType } from '../types';
 import { SparklesIcon, TrashIcon, UserIcon, RobotIcon, MicrophoneIcon, StopIcon, WandIcon, ArrowPathIcon, QueueListIcon, CubeTransparentIcon } from './icons';
+import { ActionsContext } from '../App';
 
 interface EditorProps {
     activeSection: SongSection | undefined;
-    onAddContentPart: (sectionId: string, author: Author, text: string) => void;
-    onUpdateContentPart: (sectionId: string, partId: string, newText: string) => void;
-    onDeleteContentPart: (sectionId: string, partId: string) => void;
-    onCowrite: (sectionId: string, prompt: string) => void;
-    onModifyLyric: (sectionId: string, partId: string, params: { line: string, context: string, modificationType: LyricModificationType }) => void;
-    onUpdateAudio: (sectionId: string, audioBlob: Blob) => void;
-    onDeleteAudio: (sectionId: string) => void;
-    onAnalyzeAudio: (sectionId: string) => void;
     lyricSuggestions: { partId: string, suggestions: string[] } | null;
 }
 
@@ -33,31 +26,29 @@ const SuggestionPicker: React.FC<{
 
 const ContentPartBlock: React.FC<{ 
     part: ContentPart; 
+    sectionId: string;
     sectionContext: string;
     isEditing: boolean;
     editedText: string;
     lyricSuggestions: { partId: string, suggestions: string[] } | null;
     onSetEditedText: (text: string) => void;
     onStartEditing: () => void;
-    onSaveChanges: () => void;
     onCancelEditing: () => void;
-    onDelete: () => void; 
-    onModify: (modificationType: LyricModificationType) => void;
-    onApplySuggestion: (suggestion: string) => void;
 }> = ({ 
     part, 
+    sectionId,
     sectionContext,
     isEditing, 
     editedText,
     lyricSuggestions,
     onSetEditedText,
     onStartEditing,
-    onSaveChanges, 
     onCancelEditing,
-    onDelete, 
-    onModify,
-    onApplySuggestion,
 }) => {
+    const actions = useContext(ActionsContext);
+    if (!actions) return null;
+    const { onDeleteContentPart, onModifyLyric, onUpdateContentPart } = actions;
+
     const isUser = part.author === 'user';
     
     const containerClasses = isUser 
@@ -70,6 +61,31 @@ const ContentPartBlock: React.FC<{
         
     const authorName = isUser ? 'You' : 'AI Co-Writer';
     const authorColor = isUser ? 'text-sepia-800' : 'text-teal-800';
+    
+    const onSaveChanges = () => {
+        if (editedText.trim()) {
+            onUpdateContentPart(sectionId, part.id, editedText);
+        }
+        onCancelEditing();
+    };
+
+    const onDelete = () => {
+        onDeleteContentPart(sectionId, part.id);
+    };
+
+    const onModify = (modificationType: LyricModificationType) => {
+        const lineToModify = modificationType === 'random_line' ? '' : editedText;
+        onModifyLyric(sectionId, part.id, {
+            line: lineToModify,
+            context: sectionContext,
+            modificationType
+        });
+    };
+    
+    const onApplySuggestion = (suggestion: string) => {
+        onUpdateContentPart(sectionId, part.id, suggestion);
+        onCancelEditing();
+    };
 
     if (isEditing && isUser) {
         const AIToolButton = ({ icon, label, onClick }: { icon: React.ReactNode, label: string, onClick: () => void }) => (
@@ -133,14 +149,15 @@ const ContentPartBlock: React.FC<{
     );
 };
 
-const AICoWriter: React.FC<{ onGenerate: (prompt: string) => void }> = ({ onGenerate }) => {
+const AICoWriter: React.FC<{ sectionId: string }> = ({ sectionId }) => {
     const [prompt, setPrompt] = useState('');
     const [showInput, setShowInput] = useState(false);
+    const actions = useContext(ActionsContext);
     
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (prompt.trim()) {
-            onGenerate(prompt);
+        if (prompt.trim() && actions) {
+            actions.onCowrite(sectionId, prompt);
             setPrompt('');
             setShowInput(false);
         }
@@ -165,7 +182,11 @@ const AICoWriter: React.FC<{ onGenerate: (prompt: string) => void }> = ({ onGene
                         className="flex-grow w-full bg-cream-100 text-sepia-900 border border-sepia-300 rounded-md px-3 py-1.5 text-sm placeholder-sepia-400 focus:outline-none focus:ring-2 focus:ring-orange-700 focus:border-orange-700"
                         autoFocus
                     />
-                    <button type="submit" className="bg-teal-700 hover:bg-teal-600 text-cream-100 font-semibold text-sm px-4 py-1.5 rounded-md transition-all shadow-sm border-b-2 border-teal-900/50">
+                    <button 
+                        type="submit" 
+                        className="bg-teal-700 hover:bg-teal-600 text-cream-100 font-semibold text-sm px-4 py-1.5 rounded-md transition-all shadow-sm border-b-2 border-teal-900/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!prompt.trim()}
+                    >
                         Generate
                     </button>
                 </form>
@@ -174,17 +195,14 @@ const AICoWriter: React.FC<{ onGenerate: (prompt: string) => void }> = ({ onGene
     );
 };
 
-const AudioRecorder: React.FC<{
-    section: SongSection;
-    onUpdateAudio: (sectionId: string, audioBlob: Blob) => void;
-    onDeleteAudio: (sectionId: string) => void;
-    onAnalyzeAudio: (sectionId: string) => void;
-}> = ({ section, onUpdateAudio, onDeleteAudio, onAnalyzeAudio }) => {
+const AudioRecorder: React.FC<{ section: SongSection }> = ({ section }) => {
     const [isRecording, setIsRecording] = useState(false);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
+    const actions = useContext(ActionsContext);
 
     const handleStartRecording = useCallback(async () => {
+        if (!actions) return;
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const mediaRecorder = new MediaRecorder(stream);
@@ -197,7 +215,7 @@ const AudioRecorder: React.FC<{
 
             mediaRecorder.onstop = () => {
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                onUpdateAudio(section.id, audioBlob);
+                actions.onUpdateAudio(section.id, audioBlob);
                 stream.getTracks().forEach(track => track.stop());
             };
 
@@ -207,7 +225,7 @@ const AudioRecorder: React.FC<{
             console.error("Error starting recording:", err);
             alert("Could not start recording. Please ensure you have given microphone permissions.");
         }
-    }, [section.id, onUpdateAudio]);
+    }, [section.id, actions]);
 
     const handleStopRecording = useCallback(() => {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
@@ -216,8 +234,10 @@ const AudioRecorder: React.FC<{
         }
     }, []);
     
+    if (!actions) return null;
+    const { onUpdateAudio, onDeleteAudio, onAnalyzeAudio } = actions;
+    
     const secondaryButtonClasses = "bg-cream-100/50 hover:bg-cream-100 text-sepia-800 font-semibold text-sm px-3 py-1.5 rounded-md transition-all border border-sepia-300 shadow-sm";
-
 
     return (
         <div className="border-t border-sepia-200 p-3 bg-sepia-200/20">
@@ -250,11 +270,12 @@ const AudioRecorder: React.FC<{
 };
 
 
-const EditorComponent: React.FC<EditorProps> = ({ activeSection, onAddContentPart, onUpdateContentPart, onDeleteContentPart, onCowrite, onModifyLyric, onUpdateAudio, onDeleteAudio, onAnalyzeAudio, lyricSuggestions }) => {
+const EditorComponent: React.FC<EditorProps> = ({ activeSection, lyricSuggestions }) => {
     const [userText, setUserText] = useState('');
     const endOfMessagesRef = useRef<HTMLDivElement>(null);
     const [editingPartId, setEditingPartId] = useState<string | null>(null);
     const [editedText, setEditedText] = useState('');
+    const actions = useContext(ActionsContext);
 
     useEffect(() => {
         endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -264,6 +285,9 @@ const EditorComponent: React.FC<EditorProps> = ({ activeSection, onAddContentPar
     useEffect(() => {
         setEditingPartId(null);
     }, [activeSection?.id]);
+
+    if (!actions) return null;
+    const { onAddContentPart } = actions;
 
     const handleAddUserLines = () => {
         if (activeSection && userText.trim()) {
@@ -278,7 +302,7 @@ const EditorComponent: React.FC<EditorProps> = ({ activeSection, onAddContentPar
                 <h2 className="text-base font-typewriter text-sepia-800 tracking-wide">
                     Editing: <span className="font-bold text-orange-700">{activeSection ? activeSection.label : 'No Section'}</span>
                 </h2>
-                {activeSection && <AICoWriter onGenerate={(prompt) => onCowrite(activeSection.id, prompt)} />}
+                {activeSection && <AICoWriter sectionId={activeSection.id} />}
             </div>
             
             <div className="flex-grow p-4 space-y-3 overflow-y-auto" style={{ minHeight: '40vh' }}>
@@ -286,7 +310,8 @@ const EditorComponent: React.FC<EditorProps> = ({ activeSection, onAddContentPar
                     <ContentPartBlock 
                         key={part.id} 
                         part={part} 
-                        sectionContext={activeSection.content.map(p => p.text).join('\n')}
+                        sectionId={activeSection.id}
+                        sectionContext={activeSection.content.filter(p => p.id !== part.id).map(p => p.text).join('\n')}
                         isEditing={editingPartId === part.id}
                         editedText={editedText}
                         lyricSuggestions={lyricSuggestions}
@@ -295,26 +320,7 @@ const EditorComponent: React.FC<EditorProps> = ({ activeSection, onAddContentPar
                             setEditingPartId(part.id);
                             setEditedText(part.text);
                         }}
-                        onSaveChanges={() => {
-                            if (editedText.trim()) {
-                                onUpdateContentPart(activeSection.id, part.id, editedText);
-                            }
-                            setEditingPartId(null);
-                        }}
                         onCancelEditing={() => setEditingPartId(null)}
-                        onDelete={() => onDeleteContentPart(activeSection.id, part.id)}
-                        onModify={(modificationType) => {
-                            const lineToModify = modificationType === 'random_line' ? '' : editedText;
-                            onModifyLyric(activeSection.id, part.id, {
-                                line: lineToModify,
-                                context: activeSection.content.filter(p => p.id !== part.id).map(p => p.text).join('\n'),
-                                modificationType
-                            });
-                        }}
-                        onApplySuggestion={(suggestion) => {
-                             onUpdateContentPart(activeSection.id, part.id, suggestion);
-                             setEditingPartId(null);
-                        }}
                     />
                 ))}
                 {!activeSection && (
@@ -334,9 +340,6 @@ const EditorComponent: React.FC<EditorProps> = ({ activeSection, onAddContentPar
                 <>
                     <AudioRecorder 
                         section={activeSection} 
-                        onUpdateAudio={onUpdateAudio} 
-                        onDeleteAudio={onDeleteAudio}
-                        onAnalyzeAudio={onAnalyzeAudio}
                     />
                     <div className="p-3 border-t border-sepia-200 bg-sepia-200/20">
                         <textarea
@@ -349,7 +352,8 @@ const EditorComponent: React.FC<EditorProps> = ({ activeSection, onAddContentPar
                         <div className="flex justify-end mt-2">
                             <button 
                                 onClick={handleAddUserLines}
-                                className="bg-sepia-800 hover:bg-sepia-900 text-cream-100 font-semibold text-sm px-4 py-2 rounded-md transition-all duration-200 shadow-sm border-b-2 border-black/30"
+                                className="bg-sepia-800 hover:bg-sepia-900 text-cream-100 font-semibold text-sm px-4 py-2 rounded-md transition-all duration-200 shadow-sm border-b-2 border-black/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={!userText.trim()}
                             >
                                 Add My Lines
                             </button>

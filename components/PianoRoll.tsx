@@ -1,12 +1,10 @@
 
-import React, { useState, useRef, MouseEvent, memo } from 'react';
+import React, { useState, useRef, MouseEvent, memo, useContext } from 'react';
 import type { MelodyNote, ProgressionStep } from '../types';
 import { MELODY_PITCHES } from '../constants';
+import { SongDataContext, ActionsContext } from '../App';
 
 interface PianoRollProps {
-    melody: MelodyNote[];
-    progression: ProgressionStep[];
-    onMelodyChange: (melody: MelodyNote[]) => void;
     playheadPosition: number;
     isPlaying: boolean;
 }
@@ -15,10 +13,16 @@ const BEAT_WIDTH = 40; // width of one beat in pixels
 const PITCH_HEIGHT = 24; // height of one pitch row in pixels
 const PITCHES = MELODY_PITCHES;
 
-const PianoRollComponent: React.FC<PianoRollProps> = ({ melody, progression, onMelodyChange, playheadPosition, isPlaying }) => {
+const PianoRollComponent: React.FC<PianoRollProps> = ({ playheadPosition, isPlaying }) => {
+    const songData = useContext(SongDataContext);
+    const actions = useContext(ActionsContext);
     const [isDrawing, setIsDrawing] = useState(false);
     const [drawingNote, setDrawingNote] = useState<MelodyNote | null>(null);
     const gridRef = useRef<HTMLDivElement>(null);
+
+    if (!songData || !actions) return null;
+    const { melody, progression } = songData;
+    const { onUpdateMelody } = actions;
 
     const totalBeats = progression.reduce((sum, step) => sum + step.durationBeats, 0) || 16;
     const gridWidth = totalBeats * BEAT_WIDTH;
@@ -43,7 +47,7 @@ const PianoRollComponent: React.FC<PianoRollProps> = ({ melody, progression, onM
         // Check if clicking on an existing note to delete it
         const noteToDelete = melody.find(n => n.pitch === pitch && startBeat >= n.startBeat && startBeat < n.startBeat + n.durationBeats);
         if (noteToDelete) {
-            onMelodyChange(melody.filter(n => n !== noteToDelete));
+            onUpdateMelody(melody.filter(n => n !== noteToDelete));
             return;
         }
 
@@ -61,7 +65,7 @@ const PianoRollComponent: React.FC<PianoRollProps> = ({ melody, progression, onM
 
     const handleMouseUp = () => {
         if (isDrawing && drawingNote) {
-            onMelodyChange([...melody, drawingNote]);
+            onUpdateMelody([...melody, drawingNote]);
         }
         setIsDrawing(false);
         setDrawingNote(null);

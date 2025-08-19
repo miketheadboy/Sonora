@@ -31,7 +31,7 @@ const arrayOfStringSchema = {
 };
 
 const generateContentWithSchema = async (prompt: string, schema: any): Promise<any> => {
-    if (typeof prompt !== 'string' || !prompt.trim()) {
+    if (!prompt || prompt.trim() === '') {
         console.error("AI prompt was empty or invalid. Aborting request.");
         throw new Error("Cannot send an empty prompt to the AI.");
     }
@@ -55,7 +55,7 @@ const generateContentWithSchema = async (prompt: string, schema: any): Promise<a
 };
 
 const generateTextContent = async (prompt: string): Promise<string> => {
-    if (typeof prompt !== 'string' || !prompt.trim()) {
+    if (!prompt || prompt.trim() === '') {
         console.error("AI prompt was empty or invalid. Aborting request.");
         throw new Error("Cannot send an empty prompt to the AI.");
     }
@@ -238,51 +238,31 @@ The JSON object must have the following structure:
   "chordSuggestion": "string"
 }`;
 
-        const apiKey = getApiKey();
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-        const requestBody = {
-            contents: [{
-                parts: [
-                    { text: prompt },
-                    {
-                        inlineData: {
-                            mimeType: mimeType,
-                            data: audioBase64,
-                        },
-                    },
-                ],
-            }],
-            generationConfig: {
-                responseMimeType: "application/json",
+        const aiInstance = getAiInstance();
+        
+        const audioPart = {
+            inlineData: {
+                mimeType: mimeType,
+                data: audioBase64,
             },
         };
+        const textPart = { text: prompt };
 
         try {
-            const blob = new Blob([JSON.stringify(requestBody)], { type: 'application/json' });
-            const fetchResponse = await fetch(url, {
-                method: 'POST',
-                body: blob,
+            const response = await aiInstance.models.generateContent({
+                model,
+                contents: { parts: [textPart, audioPart] },
+                config: {
+                    responseMimeType: "application/json",
+                },
             });
-
-            if (!fetchResponse.ok) {
-                const errorBody = await fetchResponse.json();
-                console.error("API Error Body:", errorBody);
-                const message = errorBody.error?.message || 'Unknown API error';
-                throw new Error(`API request failed with status ${fetchResponse.status}: ${message}`);
-            }
-
-            const responseData = await fetchResponse.json();
-            const jsonText = responseData.candidates?.[0]?.content?.parts?.[0]?.text;
-
-            if (!jsonText) {
-                console.error("Invalid response structure:", responseData);
+            const jsonText = response.text.trim();
+             if (!jsonText) {
                 throw new Error("Received an empty or invalid response from the AI.");
             }
-            
             return JSON.parse(jsonText);
         } catch (e) {
-            console.error("Failed during manual API call for audio analysis:", e);
+            console.error("Failed during SDK call for audio analysis:", e);
             if (e instanceof Error) {
                  throw new Error(`Audio analysis failed: ${e.message}`);
             }
