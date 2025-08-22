@@ -3,7 +3,7 @@ import React, { useState, memo, useContext } from 'react';
 import type { Chord, ProgressionStep } from '../types';
 import { MUSICAL_KEYS, CHORD_FUNCTION_COLORS } from '../constants';
 import { TrashIcon, PlusIcon, MinusIcon } from './icons';
-import { SongDataContext, ActionsContext } from '../App';
+import { SongDataContext, ActionsContext } from '../state/songState';
 
 interface ChordRiverProps {
     library: Chord[];

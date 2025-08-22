@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect, useCallback, memo, useContext } from 'react';
 import type { SongSection, ContentPart, Author, LyricModificationType } from '../types';
 import { SparklesIcon, TrashIcon, UserIcon, RobotIcon, MicrophoneIcon, StopIcon, WandIcon, ArrowPathIcon, QueueListIcon, CubeTransparentIcon } from './icons';
-import { ActionsContext } from '../App';
+import { ActionsContext } from '../state/songState';
 
 interface EditorProps {
     activeSection: SongSection | undefined;

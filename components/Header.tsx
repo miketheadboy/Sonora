@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, memo, useContext } from 'react';
 import { MusicNoteIcon, FilePlusIcon, DownloadIcon, ShareIcon, Bars3Icon } from './icons';
-import { SongDataContext, ActionsContext } from '../App';
+import { SongDataContext, ActionsContext } from '../state/songState';
 
 interface HeaderProps {
     onNewSong: () => void;
