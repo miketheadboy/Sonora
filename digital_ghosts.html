@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Digital Ghosts Symphony</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+@font-face {
+  font-family: 'Mono';
+  src: local('Courier New'), local('monospace');
+}
+
+body {
+  background: #0a0a0a;
+  color: #00ff88;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+  cursor: crosshair;
+}
+
+#loading-screen {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: #0a0a0a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  transition: opacity 0.8s ease;
+}
+
+#loading-screen.fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#loading-text {
+  font-size: 24px;
+  color: #00ff88;
+  letter-spacing: 8px;
+  animation: glitch 0.3s infinite;
+}
+
+@keyframes glitch {
+  0% { transform: translate(0); text-shadow: 2px 0 #ff0040, -2px 0 #00ff88; }
+  25% { transform: translate(-2px, 1px); text-shadow: -2px 0 #ff0040, 2px 0 #00ff88; }
+  50% { transform: translate(1px, -1px); text-shadow: 1px 0 #ff0040, -1px 0 #00ff88; }
+  75% { transform: translate(-1px, 2px); text-shadow: -1px 0 #ff0040, 1px 0 #00ff88; }
+  100% { transform: translate(0); text-shadow: 2px 0 #ff0040, -2px 0 #00ff88; }
+}
+
+#loading-bar {
+  width: 300px;
+  height: 2px;
+  background: #1a1a1a;
+  margin-top: 30px;
+  position: relative;
+  overflow: hidden;
+}
+
+#loading-bar::after {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%;
+  width: 100%; height: 100%;
+  background: #00ff88;
+  animation: load-sweep 1.5s ease-in-out infinite;
+}
+
+@keyframes load-sweep {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+#canvas-container {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#pseudonym-display {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  text-align: right;
+  font-size: 11px;
+  opacity: 0.4;
+  line-height: 1.6;
+  z-index: 10;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+#pseudonym-display:hover {
+  opacity: 0.8;
+}
+
+#set-label {
+  font-size: 9px;
+  opacity: 0.5;
+  margin-bottom: 6px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+}
+
+#timeline-container {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 60px;
+  background: linear-gradient(transparent, rgba(10,10,10,0.95));
+  z-index: 10;
+  padding: 10px 40px;
+}
+
+#timeline-track {
+  width: 100%;
+  height: 4px;
+  background: #1a1a1a;
+  position: relative;
+  cursor: pointer;
+  margin-top: 15px;
+  border-radius: 2px;
+}
+
+#timeline-progress {
+  height: 100%;
+  background: #00ff88;
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.1s linear;
+  box-shadow: 0 0 8px #00ff8855;
+}
+
+#timeline-playhead {
+  position: absolute;
+  top: -6px;
+  width: 16px;
+  height: 16px;
+  background: #00ff88;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  cursor: grab;
+  box-shadow: 0 0 12px #00ff88aa;
+  left: 0%;
+}
+
+#timeline-date {
+  font-size: 11px;
+  text-align: center;
+  margin-top: 10px;
+  opacity: 0.6;
+  letter-spacing: 3px;
+}
+
+#event-markers {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.event-marker {
+  position: absolute;
+  top: -3px;
+  width: 3px;
+  height: 10px;
+  border-radius: 1px;
+  pointer-events: all;
+  cursor: pointer;
+}
+
+.event-marker.conflict { background: #ff0040; }
+.event-marker.repair { background: #00aaff; }
+.event-marker.admission { background: #ffffff; }
+.event-marker.neutral { background: #00ff8844; }
+
+#tooltip {
+  position: fixed;
+  background: #111;
+  border: 1px solid #00ff8844;
+  padding: 8px 12px;
+  font-size: 10px;
+  color: #00ff88;
+  pointer-events: none;
+  z-index: 100;
+  display: none;
+  max-width: 250px;
+  line-height: 1.5;
+  letter-spacing: 1px;
+}
+
+#controls-hint {
+  position: fixed;
+  bottom: 70px;
+  left: 40px;
+  font-size: 9px;
+  opacity: 0.25;
+  letter-spacing: 2px;
+  z-index: 10;
+}
+
+#status-display {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  font-size: 10px;
+  opacity: 0.3;
+  z-index: 10;
+  letter-spacing: 2px;
+}
+
+#record-btn, #screenshot-btn {
+  position: fixed;
+  top: 20px;
+  z-index: 20;
+  background: none;
+  border: 1px solid #00ff8844;
+  color: #00ff88;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  padding: 4px 10px;
+  cursor: pointer;
+  letter-spacing: 2px;
+  opacity: 0.4;
+  transition: opacity 0.3s;
+}
+
+#record-btn:hover, #screenshot-btn:hover { opacity: 0.9; }
+#record-btn { left: 50%; transform: translateX(-60px); }
+#screenshot-btn { left: 50%; transform: translateX(20px); }
+#record-btn.recording { border-color: #ff0040; color: #ff0040; opacity: 0.9; }
+
+#flash-overlay {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: white;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 50;
+  transition: opacity 0.05s;
+}
+</style>
+</head>
+<body>
+
+<div id="loading-screen">
+  <div id="loading-text">LOADING GHOSTS...</div>
+  <div id="loading-bar"></div>
+</div>
+
+<div id="canvas-container">
+  <canvas id="main-canvas"></canvas>
+</div>
+
+<div id="pseudonym-display">
+  <div id="set-label"></div>
+  <div id="pseudonym-list"></div>
+</div>
+
+<div id="status-display">
+  <span id="play-state">PAUSED</span> | <span id="current-sender">---</span>
+</div>
+
+<div id="timeline-container">
+  <div id="timeline-track">
+    <div id="timeline-progress"></div>
+    <div id="timeline-playhead"></div>
+    <div id="event-markers"></div>
+  </div>
+  <div id="timeline-date">---</div>
+</div>
+
+<div id="controls-hint">
+  CLICK: PLAY/PAUSE &nbsp; SCRUB: TIMELINE &nbsp; R: RETHEME &nbsp; S: RESTYLE
+</div>
+
+<button id="record-btn">REC</button>
+<button id="screenshot-btn">PNG</button>
+
+<div id="tooltip"></div>
+<div id="flash-overlay"></div>
+
+<script>
+const PSEUDONYM_SETS = [
+  {
+    name: 'MYTHIC',
+    Role1: 'Orpheus',
+    Role2: 'Eurydice',
+    Role3: 'The Thorn',
+    Role4: 'The Fury',
+    Role5: 'The Ghost',
+    Location: 'The Crossroads'
+  },
+  {
+    name: 'ARCHIVAL',
+    Role1: 'The Archivist',
+    Role2: 'The Echo',
+    Role3: 'The Shadow',
+    Role4: 'The Spark',
+    Role5: 'The Pattern',
+    Location: 'Point Zero'
+  },
+  {
+    name: 'COSMIC',
+    Role1: 'The Weaver',
+    Role2: 'The Muse',
+    Role3: 'Mars',
+    Role4: 'The Witness',
+    Role5: 'Pan',
+    Location: 'The Stage'
+  }
+];
+
+const ROLE_MAP = {
+  'Michael': 'Role1',
+  'Lydia': 'Role2',
+  'Frank': 'Role3',
+  'Sarah': 'Role4',
+  'Eric': 'Role5'
+};
+
+let currentSet = PSEUDONYM_SETS[Math.floor(Math.random() * PSEUDONYM_SETS.length)];
+let emailData = [];
+let playing = false;
+let playProgress = 0;
+let playSpeed = 0.0003;
+let canvas, ctx;
+let W, H;
+let animFrame;
+let audioStarted = false;
+let shakeAmount = 0;
+let desaturation = 0;
+let flashOpacity = 0;
+let freezeFrameUntil = 0;
+let particles = [];
+let bridgeParticles = [];
+let currentEventIndex = 0;
+let styleMode = 0;
+
+let synth1, synth2, distortion, reverb, filter, noiseSynth;
+let audioInitialized = false;
+
+function pseudonym(realName) {
+  const role = ROLE_MAP[realName];
+  return role ? currentSet[role] : realName;
+}
+
+function displayPseudonyms() {
+  document.getElementById('set-label').textContent = currentSet.name;
+  const list = document.getElementById('pseudonym-list');
+  list.innerHTML = `
+    ${currentSet.Role1} / ${currentSet.Role2}<br>
+    ${currentSet.Role3} / ${currentSet.Role4} / ${currentSet.Role5}<br>
+    <span style="opacity:0.5">${currentSet.Location}</span>
+  `;
+}
+
+function loadCSV() {
+  return new Promise((resolve, reject) => {
+    Papa.parse('emails_analysis.csv', {
+      download: true,
+      header: true,
+      dynamicTyping: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        emailData = results.data.filter(r => r.Date).map(r => ({
+          date: new Date(r.Date),
+          dateStr: r.Date,
+          sender: r.Sender || '',
+          infidelity: r.Infidelity_Fallout_Flag || 0,
+          assault: r.Mentions_Assault_Related || 0,
+          frank: r.Mentions_Frank || 0,
+          sarah: r.Mentions_Sarah || 0,
+          eric: r.Mentions_Eric || 0,
+          repair: r.Repair_Attempt || 0,
+          admission: r.Specific_Admission || 0,
+          intensity: r.Intensity || 0
+        }));
+        emailData.sort((a, b) => a.date - b.date);
+        resolve();
+      },
+      error: reject
+    });
+  });
+}
+
+function setupCanvas() {
+  canvas = document.getElementById('main-canvas');
+  ctx = canvas.getContext('2d');
+  resize();
+  window.addEventListener('resize', resize);
+}
+
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * devicePixelRatio;
+  canvas.height = H * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+
+function setupTimeline() {
+  const markers = document.getElementById('event-markers');
+  markers.innerHTML = '';
+  if (emailData.length === 0) return;
+
+  const minDate = emailData[0].date.getTime();
+  const maxDate = emailData[emailData.length - 1].date.getTime();
+  const range = maxDate - minDate || 1;
+
+  emailData.forEach((e, i) => {
+    const pct = ((e.date.getTime() - minDate) / range) * 100;
+    const marker = document.createElement('div');
+    marker.className = 'event-marker';
+    if (e.infidelity || e.assault) marker.className += ' conflict';
+    else if (e.repair) marker.className += ' repair';
+    else if (e.admission) marker.className += ' admission';
+    else marker.className += ' neutral';
+
+    marker.style.left = pct + '%';
+    marker.dataset.index = i;
+
+    marker.addEventListener('mouseenter', (ev) => showTooltip(ev, e));
+    marker.addEventListener('mouseleave', hideTooltip);
+
+    markers.appendChild(marker);
+  });
+
+  const track = document.getElementById('timeline-track');
+  let dragging = false;
+
+  track.addEventListener('mousedown', (e) => {
+    dragging = true;
+    scrubTo(e, track);
+  });
+  window.addEventListener('mousemove', (e) => { if (dragging) scrubTo(e, track); });
+  window.addEventListener('mouseup', () => { dragging = false; });
+}
+
+function scrubTo(e, track) {
+  const rect = track.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  playProgress = pct;
+  updateTimelineUI();
+}
+
+function showTooltip(ev, entry) {
+  const tip = document.getElementById('tooltip');
+  const flags = [];
+  if (entry.infidelity) flags.push('INFIDELITY FALLOUT');
+  if (entry.assault) flags.push('ASSAULT RELATED');
+  if (entry.frank) flags.push('MENTIONS ' + currentSet.Role3.toUpperCase());
+  if (entry.sarah) flags.push('MENTIONS ' + currentSet.Role4.toUpperCase());
+  if (entry.eric) flags.push('MENTIONS ' + currentSet.Role5.toUpperCase());
+  if (entry.repair) flags.push('REPAIR ATTEMPT');
+  if (entry.admission) flags.push('SPECIFIC ADMISSION');
+
+  tip.innerHTML = `
+    <strong>${entry.dateStr}</strong><br>
+    FROM: ${pseudonym(entry.sender)}<br>
+    ${flags.length ? flags.join(' | ') : 'BASELINE'}<br>
+    INTENSITY: ${(entry.intensity * 100).toFixed(0)}%
+  `;
+  tip.style.left = (ev.clientX + 15) + 'px';
+  tip.style.top = (ev.clientY - 60) + 'px';
+  tip.style.display = 'block';
+}
+
+function hideTooltip() {
+  document.getElementById('tooltip').style.display = 'none';
+}
+
+function updateTimelineUI() {
+  document.getElementById('timeline-progress').style.width = (playProgress * 100) + '%';
+  document.getElementById('timeline-playhead').style.left = (playProgress * 100) + '%';
+
+  if (emailData.length === 0) return;
+
+  const minDate = emailData[0].date.getTime();
+  const maxDate = emailData[emailData.length - 1].date.getTime();
+  const currentTime = minDate + (maxDate - minDate) * playProgress;
+  const currentDate = new Date(currentTime);
+  document.getElementById('timeline-date').textContent =
+    currentDate.toISOString().split('T')[0] + ' | ' + currentSet.Location;
+}
+
+function getCurrentEntry() {
+  if (emailData.length === 0) return null;
+  const minDate = emailData[0].date.getTime();
+  const maxDate = emailData[emailData.length - 1].date.getTime();
+  const currentTime = minDate + (maxDate - minDate) * playProgress;
+
+  let closest = 0;
+  let closestDist = Infinity;
+  for (let i = 0; i < emailData.length; i++) {
+    const dist = Math.abs(emailData[i].date.getTime() - currentTime);
+    if (dist < closestDist) {
+      closestDist = dist;
+      closest = i;
+    }
+  }
+  return { entry: emailData[closest], index: closest };
+}
+
+function getLocalDensity(index, windowSize = 3) {
+  let flags = 0;
+  for (let i = Math.max(0, index - windowSize); i <= Math.min(emailData.length - 1, index + windowSize); i++) {
+    const e = emailData[i];
+    flags += e.infidelity + e.assault + e.frank + e.sarah + e.eric;
+  }
+  return flags / (windowSize * 2 + 1);
+}
+
+function hashDate(dateStr) {
+  let hash = 0;
+  for (let i = 0; i < dateStr.length; i++) {
+    hash = ((hash << 5) - hash) + dateStr.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function seededRandom(seed) {
+  let s = seed;
+  return function() {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
+function spawnParticles(x, y, color, count, speed) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const vel = (Math.random() * 0.5 + 0.5) * speed;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * vel,
+      vy: Math.sin(angle) * vel,
+      life: 1,
+      decay: 0.01 + Math.random() * 0.02,
+      color,
+      size: 1 + Math.random() * 3
+    });
+  }
+}
+
+function spawnBridgeParticles(x1, y1, x2, y2) {
+  const steps = 15;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    bridgeParticles.push({
+      x: x1 + (x2 - x1) * t,
+      y: y1 + (y2 - y1) * t,
+      life: 1,
+      decay: 0.008,
+      color: '#00aaff'
+    });
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= 0.98;
+    p.vy *= 0.98;
+    p.life -= p.decay;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  for (let i = bridgeParticles.length - 1; i >= 0; i--) {
+    const p = bridgeParticles[i];
+    p.life -= p.decay;
+    if (p.life <= 0) bridgeParticles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life * 0.8;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  bridgeParticles.forEach(p => {
+    ctx.globalAlpha = p.life * 0.5;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+async function initAudio() {
+  if (audioInitialized) return;
+  await Tone.start();
+
+  reverb = new Tone.Reverb({ decay: 4, wet: 0.3 }).toDestination();
+  filter = new Tone.Filter({ frequency: 2000, type: 'lowpass' }).connect(reverb);
+  distortion = new Tone.Distortion({ distortion: 0, wet: 0 }).connect(filter);
+
+  synth1 = new Tone.Synth({
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.5, decay: 0.3, sustain: 0.8, release: 1 },
+    volume: -18
+  }).connect(distortion);
+
+  synth2 = new Tone.Synth({
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.5, decay: 0.3, sustain: 0.8, release: 1 },
+    volume: -18
+  }).connect(distortion);
+
+  noiseSynth = new Tone.NoiseSynth({
+    noise: { type: 'brown' },
+    envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 },
+    volume: -30
+  }).connect(reverb);
+
+  synth1.triggerAttack('C4');
+  synth2.triggerAttack('E4');
+
+  audioInitialized = true;
+}
+
+function updateAudio(entry, density) {
+  if (!audioInitialized) return;
+
+  const hasMentions = entry.frank || entry.sarah || entry.eric;
+  const detune = hasMentions ? (50 + density * 100) : 0;
+  synth1.detune.rampTo(detune * (entry.frank ? 1 : 0.5), 0.3);
+  synth2.detune.rampTo(-detune * (entry.sarah ? 1 : 0.5), 0.3);
+
+  if (entry.infidelity) {
+    distortion.distortion = 0.4 + entry.intensity * 0.4;
+    distortion.wet.rampTo(0.6, 0.2);
+    synth1.frequency.rampTo('B3', 0.3);
+  } else {
+    distortion.distortion = 0;
+    distortion.wet.rampTo(0, 0.5);
+    synth1.frequency.rampTo('C4', 0.5);
+  }
+
+  if (entry.assault) {
+    noiseSynth.triggerAttackRelease('8n');
+    synth1.volume.rampTo(-40, 0.1);
+    synth2.volume.rampTo(-40, 0.1);
+    setTimeout(() => {
+      synth1.volume.rampTo(-18, 1);
+      synth2.volume.rampTo(-18, 1);
+    }, 500);
+  }
+
+  if (entry.repair) {
+    synth1.frequency.rampTo('C4', 0.3);
+    synth2.frequency.rampTo('E4', 0.3);
+    synth1.detune.rampTo(0, 0.3);
+    synth2.detune.rampTo(0, 0.3);
+    filter.frequency.rampTo(3000, 0.5);
+  }
+
+  const baseTempo = 0.0001;
+  const tempoMod = density * 0.0005;
+  playSpeed = baseTempo + tempoMod;
+
+  const filterTarget = 2000 - density * 1200;
+  filter.frequency.rampTo(Math.max(200, filterTarget), 0.3);
+
+  if (entry.sender === 'Michael') {
+    synth1.volume.rampTo(-14, 0.2);
+    synth2.volume.rampTo(-22, 0.2);
+  } else {
+    synth1.volume.rampTo(-22, 0.2);
+    synth2.volume.rampTo(-14, 0.2);
+  }
+}
+
+let prevEventIndex = -1;
+
+function render(timestamp) {
+  animFrame = requestAnimationFrame(render);
+
+  if (timestamp < freezeFrameUntil) return;
+
+  const now = performance.now();
+
+  if (playing) {
+    playProgress += playSpeed;
+    if (playProgress >= 1) {
+      playProgress = 1;
+      playing = false;
+    }
+    updateTimelineUI();
+  }
+
+  const result = getCurrentEntry();
+  if (!result) return;
+  const { entry, index } = result;
+  const density = getLocalDensity(index);
+
+  if (index !== prevEventIndex) {
+    prevEventIndex = index;
+    document.getElementById('current-sender').textContent = pseudonym(entry.sender);
+
+    if (audioInitialized) updateAudio(entry, density);
+
+    if (entry.admission) {
+      flashOpacity = 1;
+      freezeFrameUntil = now + 800;
+    }
+
+    if (entry.infidelity || entry.assault) {
+      shakeAmount = 8 + entry.intensity * 12;
+      desaturation = 0.6;
+    }
+
+    if (entry.frank || entry.sarah || entry.eric) {
+      const cx = W * playProgress;
+      const cy = H / 2;
+      spawnParticles(cx, cy, '#ff0040', 20 + density * 30, 3 + density * 4);
+    }
+
+    if (entry.repair) {
+      const y1 = H * 0.35;
+      const y2 = H * 0.65;
+      const cx = W * playProgress;
+      spawnBridgeParticles(cx, y1, cx, y2);
+    }
+  }
+
+  shakeAmount *= 0.92;
+  desaturation *= 0.95;
+  flashOpacity *= 0.85;
+
+  const shakeX = (Math.random() - 0.5) * shakeAmount;
+  const shakeY = (Math.random() - 0.5) * shakeAmount;
+
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+
+  ctx.fillStyle = `rgba(10, 10, 10, 0.15)`;
+  ctx.fillRect(0, 0, W, H);
+
+  if (desaturation > 0.01) {
+    ctx.fillStyle = `rgba(30, 30, 30, ${desaturation * 0.3})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  const seed = hashDate(entry.dateStr);
+  const rng = seededRandom(seed);
+  const jitter = (rng() - 0.5) * 50;
+
+  drawLines(entry, density, now, rng, jitter);
+  updateParticles();
+  drawParticles();
+
+  if (entry.admission) {
+    drawAdmissionShape(now);
+  }
+
+  ctx.restore();
+
+  document.getElementById('flash-overlay').style.opacity = flashOpacity;
+  document.getElementById('play-state').textContent = playing ? 'PLAYING' : 'PAUSED';
+}
+
+function drawLines(entry, density, now, rng, jitter) {
+  const hasMentions = entry.frank || entry.sarah || entry.eric;
+  const isConflict = entry.infidelity || entry.assault;
+  const isRepair = entry.repair;
+
+  const baseY1 = H * 0.35;
+  const baseY2 = H * 0.65;
+
+  const separation = isConflict ? 80 + entry.intensity * 120 : (isRepair ? -20 : 0);
+
+  const color1Base = isConflict ? [255, 0, 64] : (isRepair ? [0, 170, 255] : [40, 80, 200]);
+  const color2Base = isConflict ? [80, 0, 0] : (isRepair ? [0, 170, 255] : [220, 160, 50]);
+
+  if (styleMode === 1) {
+    drawLinesStyleB(entry, density, now, baseY1, baseY2, separation, color1Base, color2Base, hasMentions, rng, jitter);
+    return;
+  }
+
+  ctx.lineWidth = 2;
+  ctx.shadowBlur = 10;
+
+  const segments = 200;
+  const timeScale = now * 0.001;
+
+  ctx.beginPath();
+  ctx.shadowColor = `rgb(${color1Base.join(',')})`;
+  ctx.strokeStyle = `rgba(${color1Base.join(',')}, 0.8)`;
+
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const x = t * W;
+    let y = baseY1 - separation / 2;
+
+    const freq = hasMentions ? 0.03 + density * 0.05 : 0.008;
+    const amp = hasMentions ? 30 + density * 50 : 20;
+
+    if (hasMentions && Math.abs(t - playProgress) < 0.05) {
+      y += (rng() - 0.5) * 60 * density;
+      const jagAngle = Math.sin(i * 0.8 + jitter) * amp * 2;
+      y += jagAngle;
+    } else {
+      y += Math.sin(t * Math.PI * 6 + timeScale * 0.5) * amp;
+      y += Math.sin(t * Math.PI * 14 + timeScale * 0.8) * amp * 0.3;
+    }
+
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+
+    if (Math.random() < 0.03 && t > playProgress - 0.1 && t < playProgress + 0.01) {
+      spawnParticles(x, y, `rgb(${color1Base.join(',')})`, 1, 0.5);
+    }
+  }
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.shadowColor = `rgb(${color2Base.join(',')})`;
+  ctx.strokeStyle = `rgba(${color2Base.join(',')}, 0.8)`;
+
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const x = t * W;
+    let y = baseY2 + separation / 2;
+
+    const freq = hasMentions ? 0.03 + density * 0.05 : 0.008;
+    const amp = hasMentions ? 30 + density * 50 : 20;
+
+    if (hasMentions && Math.abs(t - playProgress) < 0.05) {
+      y += (rng() - 0.5) * 60 * density;
+      const jagAngle = Math.cos(i * 0.8 + jitter) * amp * 2;
+      y += jagAngle;
+    } else {
+      y += Math.sin(t * Math.PI * 6 + timeScale * 0.5 + Math.PI) * amp;
+      y += Math.cos(t * Math.PI * 10 + timeScale * 0.7) * amp * 0.4;
+    }
+
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+
+    if (Math.random() < 0.03 && t > playProgress - 0.1 && t < playProgress + 0.01) {
+      spawnParticles(x, y, `rgb(${color2Base.join(',')})`, 1, 0.5);
+    }
+  }
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+
+  const px = playProgress * W;
+  ctx.strokeStyle = '#00ff8833';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 8]);
+  ctx.beginPath();
+  ctx.moveTo(px, 0);
+  ctx.lineTo(px, H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawLinesStyleB(entry, density, now, baseY1, baseY2, separation, c1, c2, hasMentions, rng, jitter) {
+  const cx = W / 2;
+  const cy = H / 2;
+  const timeScale = now * 0.001;
+  const isConflict = entry.infidelity || entry.assault;
+
+  const points = 360;
+  ctx.lineWidth = 1.5;
+  ctx.shadowBlur = 8;
+
+  ctx.beginPath();
+  ctx.shadowColor = `rgb(${c1.join(',')})`;
+  ctx.strokeStyle = `rgba(${c1.join(',')}, 0.7)`;
+
+  for (let i = 0; i <= points; i++) {
+    const angle = (i / points) * Math.PI * 2;
+    let r = 120 + Math.sin(angle * 3 + timeScale) * 40;
+    r += Math.sin(angle * 7 + timeScale * 1.3) * 15;
+
+    if (hasMentions) {
+      r += (rng() - 0.5) * 50 * density;
+    }
+    if (isConflict) {
+      r += Math.sin(angle * 20 + jitter) * 30 * entry.intensity;
+    }
+
+    r -= separation * 0.3;
+
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.shadowColor = `rgb(${c2.join(',')})`;
+  ctx.strokeStyle = `rgba(${c2.join(',')}, 0.7)`;
+
+  for (let i = 0; i <= points; i++) {
+    const angle = (i / points) * Math.PI * 2;
+    let r = 100 + Math.cos(angle * 4 + timeScale * 0.8) * 35;
+    r += Math.cos(angle * 9 + timeScale * 1.1) * 12;
+
+    if (hasMentions) {
+      r += (rng() - 0.5) * 50 * density;
+    }
+    if (isConflict) {
+      r += Math.cos(angle * 20 + jitter) * 30 * entry.intensity;
+    }
+
+    r += separation * 0.3;
+
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+}
+
+function drawAdmissionShape(now) {
+  const cx = W / 2;
+  const cy = H / 2;
+  const size = 40;
+  const rot = now * 0.001;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rot);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.8;
+
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const r = i % 2 === 0 ? size : size * 0.4;
+    const x = Math.cos(angle) * r;
+    const y = Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2 + rot * 0.5;
+    const len = size * 1.5;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(angle) * size * 0.6, Math.sin(angle) * size * 0.6);
+    ctx.lineTo(Math.cos(angle) * len, Math.sin(angle) * len);
+    ctx.stroke();
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function setupInteraction() {
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('#timeline-container') ||
+        e.target.closest('button')) return;
+
+    if (!audioStarted) {
+      initAudio();
+      audioStarted = true;
+    }
+    playing = !playing;
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'r' || e.key === 'R') {
+      const currentIndex = PSEUDONYM_SETS.indexOf(currentSet);
+      currentSet = PSEUDONYM_SETS[(currentIndex + 1) % PSEUDONYM_SETS.length];
+      displayPseudonyms();
+      prevEventIndex = -1;
+    }
+    if (e.key === 's' || e.key === 'S') {
+      styleMode = (styleMode + 1) % 2;
+      ctx.clearRect(0, 0, W, H);
+    }
+    if (e.key === ' ') {
+      e.preventDefault();
+      if (!audioStarted) {
+        initAudio();
+        audioStarted = true;
+      }
+      playing = !playing;
+    }
+  });
+
+  document.getElementById('screenshot-btn').addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = `digital_ghosts_${Date.now()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+
+  let mediaRecorder = null;
+  let recordedChunks = [];
+
+  document.getElementById('record-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('record-btn');
+
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.stop();
+      btn.classList.remove('recording');
+      btn.textContent = 'REC';
+      return;
+    }
+
+    try {
+      const canvasStream = canvas.captureStream(30);
+      let combinedStream;
+
+      if (audioInitialized && Tone.getContext().rawContext) {
+        const audioCtx = Tone.getContext().rawContext;
+        const dest = audioCtx.createMediaStreamDestination();
+        Tone.getDestination().connect(new Tone.Gain().connect(Tone.getContext().createGain()));
+
+        try {
+          const gainNode = audioCtx.createGain();
+          Tone.getDestination().connect(gainNode);
+          gainNode.connect(dest);
+          const audioTracks = dest.stream.getAudioTracks();
+          combinedStream = new MediaStream([
+            ...canvasStream.getVideoTracks(),
+            ...audioTracks
+          ]);
+        } catch {
+          combinedStream = canvasStream;
+        }
+      } else {
+        combinedStream = canvasStream;
+      }
+
+      recordedChunks = [];
+      mediaRecorder = new MediaRecorder(combinedStream, {
+        mimeType: 'video/webm;codecs=vp9'
+      });
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `digital_ghosts_${Date.now()}.webm`;
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+
+      mediaRecorder.start();
+      btn.classList.add('recording');
+      btn.textContent = 'STOP';
+
+      setTimeout(() => {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+          mediaRecorder.stop();
+          btn.classList.remove('recording');
+          btn.textContent = 'REC';
+        }
+      }, 60000);
+
+    } catch (err) {
+      console.error('Recording failed:', err);
+    }
+  });
+}
+
+async function init() {
+  setupCanvas();
+  displayPseudonyms();
+
+  try {
+    await loadCSV();
+  } catch (err) {
+    console.error('CSV load failed:', err);
+    document.getElementById('loading-text').textContent = 'CSV NOT FOUND';
+    document.getElementById('loading-text').style.color = '#ff0040';
+    return;
+  }
+
+  setupTimeline();
+  updateTimelineUI();
+  setupInteraction();
+
+  setTimeout(() => {
+    document.getElementById('loading-screen').classList.add('fade-out');
+    setTimeout(() => {
+      document.getElementById('loading-screen').style.display = 'none';
+    }, 800);
+    requestAnimationFrame(render);
+  }, 2000);
+}
+
+init();
+</script>
+</body>
+</html>
