@@ -330,13 +330,7 @@ const PSEUDONYM_SETS = [
   }
 ];
 
-const ROLE_MAP = {
-  'Michael': 'Role1',
-  'Lydia': 'Role2',
-  'Frank': 'Role3',
-  'Sarah': 'Role4',
-  'Eric': 'Role5'
-};
+const ROLE_IDS = ['Role1', 'Role2', 'Role3', 'Role4', 'Role5'];
 
 let currentSet = PSEUDONYM_SETS[Math.floor(Math.random() * PSEUDONYM_SETS.length)];
 let emailData = [];
@@ -359,9 +353,8 @@ let styleMode = 0;
 let synth1, synth2, distortion, reverb, filter, noiseSynth;
 let audioInitialized = false;
 
-function pseudonym(realName) {
-  const role = ROLE_MAP[realName];
-  return role ? currentSet[role] : realName;
+function pseudonym(roleId) {
+  return ROLE_IDS.includes(roleId) ? currentSet[roleId] : roleId;
 }
 
 function displayPseudonyms() {
@@ -388,9 +381,9 @@ function loadCSV() {
           sender: r.Sender || '',
           infidelity: r.Infidelity_Fallout_Flag || 0,
           assault: r.Mentions_Assault_Related || 0,
-          frank: r.Mentions_Frank || 0,
-          sarah: r.Mentions_Sarah || 0,
-          eric: r.Mentions_Eric || 0,
+          frank: r.Mentions_Role3 || 0,
+          sarah: r.Mentions_Role4 || 0,
+          eric: r.Mentions_Role5 || 0,
           repair: r.Repair_Attempt || 0,
           admission: r.Specific_Admission || 0,
           intensity: r.Intensity || 0
@@ -687,7 +680,7 @@ function updateAudio(entry, density) {
   const filterTarget = 2000 - density * 1200;
   filter.frequency.rampTo(Math.max(200, filterTarget), 0.3);
 
-  if (entry.sender === 'Michael') {
+  if (entry.sender === 'Role1') {
     synth1.volume.rampTo(-14, 0.2);
     synth2.volume.rampTo(-22, 0.2);
   } else {
