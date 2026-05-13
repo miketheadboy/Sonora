@@ -350,8 +350,8 @@ let bridgeParticles = [];
 let currentEventIndex = 0;
 let styleMode = 0;
 
-let synth1, synth2, distortion, reverb, filter, noiseSynth;
 let audioInitialized = false;
+let musicEngine = null;
 
 function pseudonym(roleId) {
   return ROLE_IDS.includes(roleId) ? currentSet[roleId] : roleId;
@@ -605,88 +605,287 @@ function drawParticles() {
   ctx.globalAlpha = 1;
 }
 
+// ── MUSIC ENGINE ──────────────────────────────────────────────
+
+const CHORD_PROGRESSIONS = {
+  pure:     [['C4','E4','G4'], ['F4','A4','C5'], ['G4','B4','D5'], ['Am3','C4','E4']],
+  uneasy:   [['C4','Eb4','G4'], ['F4','Ab4','C5'], ['G4','Bb4','D5'], ['Ab3','C4','Eb4']],
+  dark:     [['C4','Eb4','Gb4'], ['Db4','F4','Ab4'], ['Eb4','Gb4','Bb4'], ['B3','D4','F4']],
+  shattered:[['C4','E4','Bb4'], ['F#4','A4','D5'], ['Eb4','G4','Db5'], ['B3','F4','Ab4']]
+};
+
+const MELODY_SHAPES = {
+  lyrical:   [0, 2, 4, 7, 4, 2, 0, -1],
+  ascending: [0, 2, 3, 5, 7, 8, 10, 12],
+  falling:   [12, 10, 8, 7, 5, 3, 2, 0],
+  broken:    [0, 7, 3, 10, 1, 8, 4, 11],
+  tentative: [0, 2, 0, -1, 0, 4, 2, 0],
+  anguish:   [0, 1, 0, -1, -2, -1, 3, 0]
+};
+
+function midiToFreq(note) {
+  if (typeof note === 'number') return 440 * Math.pow(2, (note - 69) / 12);
+  return Tone.Frequency(note).toFrequency();
+}
+
+function noteNameToMidi(name) {
+  return Tone.Frequency(name).toMidi();
+}
+
+function createMusicEngine() {
+  const reverb = new Tone.Reverb({ decay: 5, wet: 0.35 }).toDestination();
+  const delay = new Tone.FeedbackDelay({ delayTime: '8n.', feedback: 0.25, wet: 0.15 }).connect(reverb);
+  const filter = new Tone.Filter({ frequency: 4000, type: 'lowpass', rolloff: -12 }).connect(delay);
+  const distortion = new Tone.Distortion({ distortion: 0, wet: 0 }).connect(filter);
+  const chorus = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.5, wet: 0.2 }).connect(distortion);
+
+  const padGain = new Tone.Gain(0.6).connect(chorus);
+  const pad = new Tone.PolySynth(Tone.Synth, {
+    maxPolyphony: 8,
+    voice: Tone.Synth,
+    options: {
+      oscillator: { type: 'sine' },
+      envelope: { attack: 1.5, decay: 0.8, sustain: 0.6, release: 2.5 },
+      volume: -20
+    }
+  }).connect(padGain);
+
+  const voice1Gain = new Tone.Gain(0.8).connect(chorus);
+  const voice1 = new Tone.Synth({
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.08, decay: 0.3, sustain: 0.4, release: 0.8 },
+    volume: -14
+  }).connect(voice1Gain);
+
+  const voice2Gain = new Tone.Gain(0.8).connect(chorus);
+  const voice2 = new Tone.Synth({
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.12, decay: 0.4, sustain: 0.35, release: 1.0 },
+    volume: -14
+  }).connect(voice2Gain);
+
+  const ghostVoice = new Tone.Synth({
+    oscillator: { type: 'fatsawtooth', spread: 20 },
+    envelope: { attack: 0.02, decay: 0.15, sustain: 0.1, release: 0.3 },
+    volume: -28
+  }).connect(distortion);
+
+  const noiseSynth = new Tone.NoiseSynth({
+    noise: { type: 'brown' },
+    envelope: { attack: 0.005, decay: 0.08, sustain: 0, release: 0.15 },
+    volume: -32
+  }).connect(reverb);
+
+  const bassSynth = new Tone.Synth({
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.4, decay: 0.6, sustain: 0.5, release: 1.5 },
+    volume: -22
+  }).connect(filter);
+
+  let damage = 0;
+  let currentChordIndex = 0;
+  let phraseStep = 0;
+  let lastPhraseTime = 0;
+  let currentProgression = 'pure';
+  let sequenceTimers = [];
+  let isPlaying = false;
+
+  function clearTimers() {
+    sequenceTimers.forEach(t => clearTimeout(t));
+    sequenceTimers = [];
+  }
+
+  function getProgression() {
+    if (damage < 0.15) return 'pure';
+    if (damage < 0.4) return 'uneasy';
+    if (damage < 0.7) return 'dark';
+    return 'shattered';
+  }
+
+  function getMelodyShape(entry) {
+    if (entry.admission) return MELODY_SHAPES.anguish;
+    if (entry.assault) return MELODY_SHAPES.broken;
+    if (entry.infidelity) return MELODY_SHAPES.falling;
+    if (entry.repair) return MELODY_SHAPES.tentative;
+    if (entry.frank || entry.sarah || entry.eric) return MELODY_SHAPES.ascending;
+    return MELODY_SHAPES.lyrical;
+  }
+
+  function getNoteDuration(density) {
+    if (damage > 0.7) return 0.15 + Math.random() * 0.1;
+    if (damage > 0.4) return 0.2 + Math.random() * 0.15;
+    return 0.3 + Math.random() * 0.3;
+  }
+
+  function getPhraseGap(density) {
+    const base = 0.35 - density * 0.15;
+    return Math.max(0.12, base + (Math.random() - 0.5) * 0.1);
+  }
+
+  function playPhrase(entry, density, index) {
+    if (!isPlaying) return;
+    clearTimers();
+
+    const prog = getProgression();
+    currentProgression = prog;
+    const chords = CHORD_PROGRESSIONS[prog];
+    const chord = chords[currentChordIndex % chords.length];
+    currentChordIndex++;
+
+    const rootMidi = noteNameToMidi(chord[0]);
+    const shape = getMelodyShape(entry);
+    const isRole1 = entry.sender === 'Role1';
+    const leadVoice = isRole1 ? voice1 : voice2;
+    const leadGain = isRole1 ? voice1Gain : voice2Gain;
+    const bgVoice = isRole1 ? voice2 : voice1;
+    const bgGain = isRole1 ? voice2Gain : voice1Gain;
+
+    leadGain.gain.rampTo(0.8, 0.3);
+    bgGain.gain.rampTo(0.3, 0.3);
+
+    pad.releaseAll();
+    const padNotes = chord.map(n => {
+      const cents = damage * (Math.random() - 0.5) * 30;
+      return Tone.Frequency(n).toFrequency() * Math.pow(2, cents / 1200);
+    });
+    pad.triggerAttack(padNotes);
+
+    const bassNote = Tone.Frequency(chord[0]).toFrequency() / 2;
+    bassSynth.triggerAttackRelease(bassNote, 2.5);
+
+    let time = 0;
+    const notesInPhrase = Math.min(shape.length, 4 + Math.floor(Math.random() * 5));
+
+    for (let i = 0; i < notesInPhrase; i++) {
+      const interval = shape[i % shape.length];
+      const noteMidi = rootMidi + interval + (isRole1 ? 0 : 7);
+      const freq = midiToFreq(noteMidi);
+      const dur = getNoteDuration(density);
+      const gap = getPhraseGap(density);
+
+      const detuneAmt = damage * (Math.random() - 0.5) * 40;
+      const actualFreq = freq * Math.pow(2, detuneAmt / 1200);
+
+      const t = sequenceTimers.push(setTimeout(() => {
+        if (!isPlaying) return;
+        leadVoice.triggerAttackRelease(actualFreq, dur);
+      }, time * 1000)) - 1;
+
+      if (damage > 0.3 && Math.random() < damage * 0.6) {
+        const ghostInterval = shape[(i + 3) % shape.length];
+        const ghostMidi = rootMidi + ghostInterval + (Math.random() > 0.5 ? 12 : 0);
+        const ghostFreq = midiToFreq(ghostMidi) * Math.pow(2, (Math.random() - 0.5) * 80 / 1200);
+        const ghostDelay = time + dur * 0.3;
+        sequenceTimers.push(setTimeout(() => {
+          if (!isPlaying) return;
+          ghostVoice.triggerAttackRelease(ghostFreq, dur * 0.4);
+        }, ghostDelay * 1000));
+      }
+
+      time += dur + gap;
+    }
+
+    if (entry.repair && damage > 0.1) {
+      const echoTime = time + 0.2;
+      const pureChord = CHORD_PROGRESSIONS.pure[currentChordIndex % 4];
+      sequenceTimers.push(setTimeout(() => {
+        if (!isPlaying) return;
+        bgVoice.triggerAttackRelease(Tone.Frequency(pureChord[2]).toFrequency(), 0.6);
+      }, echoTime * 1000));
+      sequenceTimers.push(setTimeout(() => {
+        if (!isPlaying) return;
+        bgVoice.triggerAttackRelease(Tone.Frequency(pureChord[1]).toFrequency(), 0.8);
+      }, (echoTime + 0.4) * 1000));
+    }
+
+    if (entry.assault) {
+      sequenceTimers.push(setTimeout(() => {
+        if (!isPlaying) return;
+        noiseSynth.triggerAttackRelease('16n');
+        pad.releaseAll();
+        leadVoice.triggerRelease();
+        bgVoice.triggerRelease();
+      }, 300));
+      sequenceTimers.push(setTimeout(() => {
+        if (!isPlaying) return;
+        bassSynth.triggerAttackRelease(midiToFreq(rootMidi - 24), 2);
+      }, 1200));
+    }
+
+    if (entry.admission) {
+      sequenceTimers.push(setTimeout(() => {
+        if (!isPlaying) return;
+        pad.releaseAll();
+        const singleNote = midiToFreq(rootMidi + 12);
+        voice1.triggerAttackRelease(singleNote, 2);
+      }, 200));
+    }
+
+    const phraseDuration = time + 0.5;
+    sequenceTimers.push(setTimeout(() => {
+      pad.releaseAll();
+    }, phraseDuration * 1000));
+  }
+
+  function updateDamage(index) {
+    let accumulated = 0;
+    let healed = 0;
+    for (let i = 0; i <= index; i++) {
+      const e = emailData[i];
+      accumulated += e.infidelity * 0.08;
+      accumulated += e.assault * 0.12;
+      accumulated += (e.frank + e.sarah + e.eric) * 0.03;
+      healed += e.repair * 0.04;
+    }
+    damage = Math.min(1, Math.max(0, accumulated - healed));
+
+    distortion.distortion = damage * 0.6;
+    distortion.wet.rampTo(damage * 0.5, 0.5);
+    filter.frequency.rampTo(4000 - damage * 2800, 0.5);
+    chorus.wet.rampTo(0.2 + damage * 0.3, 0.3);
+    delay.feedback.rampTo(0.15 + damage * 0.25, 0.5);
+
+    voice1.oscillator.type = damage > 0.5 ? 'sawtooth' : (damage > 0.25 ? 'square' : 'triangle');
+    voice2.oscillator.type = damage > 0.5 ? 'fatsawtooth' : 'sine';
+
+    voice1.envelope.attack = Math.max(0.01, 0.08 - damage * 0.06);
+    voice1.envelope.release = Math.max(0.2, 0.8 - damage * 0.5);
+    voice2.envelope.attack = Math.max(0.02, 0.12 - damage * 0.08);
+  }
+
+  function update(entry, density, index) {
+    updateDamage(index);
+    playPhrase(entry, density, index);
+
+    const baseTempo = 0.00018;
+    const tempoMod = density * 0.0003 + damage * 0.0002;
+    playSpeed = baseTempo + tempoMod;
+  }
+
+  function start() { isPlaying = true; }
+  function stop() {
+    isPlaying = false;
+    clearTimers();
+    pad.releaseAll();
+    voice1.triggerRelease();
+    voice2.triggerRelease();
+  }
+
+  return { update, start, stop, get damage() { return damage; } };
+}
+
 async function initAudio() {
   if (audioInitialized) return;
   await Tone.start();
-
-  reverb = new Tone.Reverb({ decay: 4, wet: 0.3 }).toDestination();
-  filter = new Tone.Filter({ frequency: 2000, type: 'lowpass' }).connect(reverb);
-  distortion = new Tone.Distortion({ distortion: 0, wet: 0 }).connect(filter);
-
-  synth1 = new Tone.Synth({
-    oscillator: { type: 'sine' },
-    envelope: { attack: 0.5, decay: 0.3, sustain: 0.8, release: 1 },
-    volume: -18
-  }).connect(distortion);
-
-  synth2 = new Tone.Synth({
-    oscillator: { type: 'sine' },
-    envelope: { attack: 0.5, decay: 0.3, sustain: 0.8, release: 1 },
-    volume: -18
-  }).connect(distortion);
-
-  noiseSynth = new Tone.NoiseSynth({
-    noise: { type: 'brown' },
-    envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 },
-    volume: -30
-  }).connect(reverb);
-
-  synth1.triggerAttack('C4');
-  synth2.triggerAttack('E4');
-
+  Tone.Transport.bpm.value = 90;
+  musicEngine = createMusicEngine();
+  musicEngine.start();
   audioInitialized = true;
 }
 
-function updateAudio(entry, density) {
-  if (!audioInitialized) return;
-
-  const hasMentions = entry.frank || entry.sarah || entry.eric;
-  const detune = hasMentions ? (50 + density * 100) : 0;
-  synth1.detune.rampTo(detune * (entry.frank ? 1 : 0.5), 0.3);
-  synth2.detune.rampTo(-detune * (entry.sarah ? 1 : 0.5), 0.3);
-
-  if (entry.infidelity) {
-    distortion.distortion = 0.4 + entry.intensity * 0.4;
-    distortion.wet.rampTo(0.6, 0.2);
-    synth1.frequency.rampTo('B3', 0.3);
-  } else {
-    distortion.distortion = 0;
-    distortion.wet.rampTo(0, 0.5);
-    synth1.frequency.rampTo('C4', 0.5);
-  }
-
-  if (entry.assault) {
-    noiseSynth.triggerAttackRelease('8n');
-    synth1.volume.rampTo(-40, 0.1);
-    synth2.volume.rampTo(-40, 0.1);
-    setTimeout(() => {
-      synth1.volume.rampTo(-18, 1);
-      synth2.volume.rampTo(-18, 1);
-    }, 500);
-  }
-
-  if (entry.repair) {
-    synth1.frequency.rampTo('C4', 0.3);
-    synth2.frequency.rampTo('E4', 0.3);
-    synth1.detune.rampTo(0, 0.3);
-    synth2.detune.rampTo(0, 0.3);
-    filter.frequency.rampTo(3000, 0.5);
-  }
-
-  const baseTempo = 0.0001;
-  const tempoMod = density * 0.0005;
-  playSpeed = baseTempo + tempoMod;
-
-  const filterTarget = 2000 - density * 1200;
-  filter.frequency.rampTo(Math.max(200, filterTarget), 0.3);
-
-  if (entry.sender === 'Role1') {
-    synth1.volume.rampTo(-14, 0.2);
-    synth2.volume.rampTo(-22, 0.2);
-  } else {
-    synth1.volume.rampTo(-22, 0.2);
-    synth2.volume.rampTo(-14, 0.2);
-  }
+function updateAudio(entry, density, index) {
+  if (!audioInitialized || !musicEngine) return;
+  musicEngine.update(entry, density, index);
 }
 
 let prevEventIndex = -1;
@@ -716,7 +915,7 @@ function render(timestamp) {
     prevEventIndex = index;
     document.getElementById('current-sender').textContent = pseudonym(entry.sender);
 
-    if (audioInitialized) updateAudio(entry, density);
+    if (audioInitialized) updateAudio(entry, density, index);
 
     if (entry.admission) {
       flashOpacity = 1;
@@ -988,6 +1187,7 @@ function setupInteraction() {
       audioStarted = true;
     }
     playing = !playing;
+    if (musicEngine) { playing ? musicEngine.start() : musicEngine.stop(); }
   });
 
   document.addEventListener('keydown', (e) => {
@@ -1008,6 +1208,7 @@ function setupInteraction() {
         audioStarted = true;
       }
       playing = !playing;
+      if (musicEngine) { playing ? musicEngine.start() : musicEngine.stop(); }
     }
   });
 
