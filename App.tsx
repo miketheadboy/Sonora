@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect, useRef, useReducer, createContext, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useReducer, useMemo } from 'react';
 import { Header } from './components/Header';
 import { Editor } from './components/Editor';
 import { Sidebar } from './components/Sidebar';
@@ -11,124 +11,13 @@ import { SongStructureEditor } from './components/SongStructureEditor';
 import { geminiService } from './services/geminiService';
 import { audioService } from './services/audioService';
 import type { GenerateIdeaParams, GenerateRhymesParams, GenerateSynonymsParams, GenerateWordAssociationsParams, GenerateBlendedIdeaParams, Chord, SongSection, SectionType, ContentPart, Author, AudioAnalysisResult, SongData, GetInspirationalSparkParams, ModifyLyricParams, MelodyNote, ProgressionStep, GenerateTitleParams, AnalysisType, GenerateEmotionalPaletteParams, GenerateObjectObservationParams } from './types';
+import { SongDataContext, ActionsContext, songReducer, getInitialSongData } from './state/songState';
+import { blobToBase64, bytesToBase64 } from './utils/base64';
+import { useDebounce } from './hooks/useDebounce';
 
 // --- State Management (Reducer & Context) ---
 
-type SongAction =
-    | { type: 'SET_SONG_DATA'; payload: SongData }
-    | { type: 'UPDATE_TITLE'; payload: string }
-    | { type: 'ADD_CONTENT_PART'; payload: { sectionId: string; part: ContentPart } }
-    | { type: 'UPDATE_CONTENT_PART'; payload: { sectionId: string; partId: string; newText: string } }
-    | { type: 'DELETE_CONTENT_PART'; payload: { sectionId: string; partId: string } }
-    | { type: 'ADD_SECTION'; payload: SongSection }
-    | { type: 'DELETE_SECTION'; payload: string }
-    | { type: 'UPDATE_SECTION'; payload: { sectionId: string; updates: { type: SectionType; label: string } } }
-    | { type: 'REORDER_SECTIONS'; payload: { startIndex: number; endIndex: number } }
-    | { type: 'APPLY_STRUCTURE'; payload: SongSection[] }
-    | { type: 'UPDATE_PROGRESSION'; payload: ProgressionStep[] }
-    | { type: 'UPDATE_PROGRESSION_STEP'; payload: { id: string; updates: { durationBeats: number } } }
-    | { type: 'UPDATE_KEY'; payload: string }
-    | { type: 'UPDATE_BPM'; payload: number }
-    | { type: 'UPDATE_TIME_SIGNATURE'; payload: string }
-    | { type: 'UPDATE_MELODY'; payload: MelodyNote[] }
-    | { type: 'UPDATE_AUDIO'; payload: { sectionId: string; audio: { base64: string; mimeType: string; blobUrl: string } } }
-    | { type: 'DELETE_AUDIO'; payload: string };
-
-const songReducer = (state: SongData, action: SongAction): SongData => {
-    switch (action.type) {
-        case 'SET_SONG_DATA':
-            return action.payload;
-        case 'UPDATE_TITLE':
-            return { ...state, title: action.payload };
-        case 'ADD_CONTENT_PART':
-            return {
-                ...state,
-                structure: state.structure.map(s =>
-                    s.id === action.payload.sectionId
-                        ? { ...s, content: [...s.content, action.payload.part] }
-                        : s
-                ),
-            };
-        case 'UPDATE_CONTENT_PART':
-            return {
-                ...state,
-                structure: state.structure.map(s =>
-                    s.id === action.payload.sectionId
-                        ? { ...s, content: s.content.map(p => p.id === action.payload.partId ? { ...p, text: action.payload.newText } : p) }
-                        : s
-                ),
-            };
-        case 'DELETE_CONTENT_PART':
-            return {
-                ...state,
-                structure: state.structure.map(s =>
-                    s.id === action.payload.sectionId
-                        ? { ...s, content: s.content.filter(p => p.id !== action.payload.partId) }
-                        : s
-                ),
-            };
-        case 'ADD_SECTION':
-            return { ...state, structure: [...state.structure, action.payload] };
-        case 'DELETE_SECTION': {
-            const newStructure = state.structure.filter(s => s.id !== action.payload);
-            return { ...state, structure: newStructure };
-        }
-        case 'UPDATE_SECTION':
-            return {
-                ...state,
-                structure: state.structure.map(s =>
-                    s.id === action.payload.sectionId
-                        ? { ...s, type: action.payload.updates.type, label: action.payload.updates.label }
-                        : s
-                ),
-            };
-        case 'REORDER_SECTIONS': {
-            const result = Array.from(state.structure);
-            const [removed] = result.splice(action.payload.startIndex, 1);
-            result.splice(action.payload.endIndex, 0, removed);
-            return { ...state, structure: result };
-        }
-        case 'APPLY_STRUCTURE':
-            return { ...state, structure: action.payload };
-        case 'UPDATE_PROGRESSION':
-            return { ...state, progression: action.payload };
-        case 'UPDATE_PROGRESSION_STEP':
-            return {
-                ...state,
-                progression: state.progression.map(step => step.id === action.payload.id ? { ...step, ...action.payload.updates } : step)
-            };
-        case 'UPDATE_KEY':
-            return { ...state, key: action.payload, progression: [] }; // Reset progression on key change
-        case 'UPDATE_BPM':
-            return { ...state, bpm: action.payload };
-        case 'UPDATE_TIME_SIGNATURE':
-            return { ...state, timeSignature: action.payload };
-        case 'UPDATE_MELODY':
-            return { ...state, melody: action.payload };
-        case 'UPDATE_AUDIO':
-            return {
-                ...state,
-                structure: state.structure.map(s =>
-                    s.id === action.payload.sectionId ? { ...s, audio: action.payload.audio } : s
-                ),
-            };
-        case 'DELETE_AUDIO': {
-            return {
-                ...state,
-                structure: state.structure.map(s => {
-                    if (s.id === action.payload) {
-                        const { audio, ...rest } = s;
-                        if (audio?.blobUrl) URL.revokeObjectURL(audio.blobUrl);
-                        return rest;
-                    }
-                    return s;
-                }),
-            };
-        }
-        default:
-            return state;
-    }
-};
+// [extracted to state/songState]
 
 export const SongDataContext = createContext<SongData | null>(null);
 export const ActionsContext = createContext<any | null>(null);
@@ -697,6 +586,7 @@ const App: React.FC = () => {
         onAddSection: handleAddSection,
         onDeleteSection: handleDeleteSection,
         onUpdateSection: handleUpdateSection,
+        onReorder: handleReorderSections,
         onReorderSections: handleReorderSections,
         onUpdateAudio: handleUpdateAudio,
         onDeleteAudio: handleDeleteAudio,

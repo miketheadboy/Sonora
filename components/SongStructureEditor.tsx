@@ -3,7 +3,7 @@ import React, { useState, useEffect, memo, useContext } from 'react';
 import type { SongSection, SectionType } from '../types';
 import { TrashIcon, CheckIcon, XMarkIcon, SparklesIcon } from './icons';
 import { SECTION_TYPES } from '../constants';
-import { SongDataContext, ActionsContext } from '../App';
+import { SongDataContext, ActionsContext } from '../state/songState';
 
 interface SectionBlockProps {
     section: SongSection;

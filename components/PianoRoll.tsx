@@ -2,7 +2,7 @@
 import React, { useState, useRef, MouseEvent, memo, useContext } from 'react';
 import type { MelodyNote, ProgressionStep } from '../types';
 import { MELODY_PITCHES } from '../constants';
-import { SongDataContext, ActionsContext } from '../App';
+import { SongDataContext, ActionsContext } from '../state/songState';
 
 interface PianoRollProps {
     playheadPosition: number;

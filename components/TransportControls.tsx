@@ -2,7 +2,7 @@
 import React, { useContext } from 'react';
 import { TIME_SIGNATURES } from '../constants';
 import { PlayCircleIcon, StopCircleIcon } from './icons';
-import { SongDataContext, ActionsContext } from '../App';
+import { SongDataContext, ActionsContext } from '../state/songState';
 
 interface TransportControlsProps {
     isPlaying: boolean;
