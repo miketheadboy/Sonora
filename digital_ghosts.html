@@ -49,6 +49,26 @@ canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0;}
 #screenshot-btn{left:50%;transform:translateX(20px);}
 #record-btn.recording{border-color:#ff0040;color:#ff0040;opacity:0.9;}
 #flash-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:white;opacity:0;pointer-events:none;z-index:50;transition:opacity 0.05s;}
+/* DROP OVERLAY */
+#drop-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(10,10,10,.96);z-index:900;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .3s;}
+#drop-overlay.hidden{opacity:0;pointer-events:none;}
+#drop-overlay.drag-hover{background:rgba(0,255,136,.05);border:2px dashed #00ff88;}
+#drop-title{font-size:18px;letter-spacing:6px;margin-bottom:10px;opacity:.7;}
+#drop-subtitle{font-size:10px;letter-spacing:3px;opacity:.35;margin-bottom:40px;}
+#profile-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:720px;width:90%;}
+.profile-card{background:#111;border:1px solid #1a1a1a;padding:16px;cursor:pointer;transition:all .2s;text-align:center;}
+.profile-card:hover{border-color:#00ff88;background:#0d1a10;}
+.profile-card.active{border-color:#00ff88;box-shadow:0 0 15px #00ff8833;}
+.profile-card h3{font-size:11px;letter-spacing:3px;margin-bottom:8px;color:#00ff88;}
+.profile-card p{font-size:9px;opacity:.4;line-height:1.5;letter-spacing:1px;}
+#drop-hint{font-size:9px;opacity:.25;margin-top:30px;letter-spacing:2px;}
+#drop-close{position:absolute;top:20px;right:20px;background:none;border:1px solid #1a1a1a;color:#00ff88;font-family:'Courier New',monospace;font-size:9px;padding:4px 10px;cursor:pointer;opacity:.4;letter-spacing:2px;}
+#drop-close:hover{opacity:.8;border-color:#00ff88;}
+/* GALLERY MODE */
+body.gallery #pseudonym-display,body.gallery #status-display,body.gallery #mode-display,
+body.gallery #damage-bar,body.gallery #timeline-container,body.gallery #controls-hint,
+body.gallery #record-btn,body.gallery #screenshot-btn{opacity:0!important;pointer-events:none!important;transition:opacity .5s;}
+body.gallery{cursor:none;}
 </style>
 </head>
 <body>
@@ -62,11 +82,19 @@ canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0;}
   <div id="timeline-track"><div id="timeline-progress"></div><div id="timeline-playhead"></div><div id="event-markers"></div></div>
   <div id="timeline-date">---</div>
 </div>
-<div id="controls-hint">CLICK: PLAY/PAUSE &nbsp; SCRUB: TIMELINE &nbsp; R: RETHEME &nbsp; S: RESTYLE</div>
+<div id="controls-hint">CLICK: PLAY/PAUSE &nbsp; SCRUB: TIMELINE &nbsp; R: RETHEME &nbsp; S: RESTYLE &nbsp; D: DATA &nbsp; G: GALLERY</div>
 <button id="record-btn">REC</button>
 <button id="screenshot-btn">PNG</button>
 <div id="tooltip"></div>
 <div id="flash-overlay"></div>
+
+<div id="drop-overlay" class="hidden">
+  <button id="drop-close">CLOSE [D]</button>
+  <div id="drop-title">THE DIGITAL GHOSTS SYMPHONY</div>
+  <div id="drop-subtitle">DROP A CSV OR SELECT A NARRATIVE LENS</div>
+  <div id="profile-grid"></div>
+  <div id="drop-hint">DRAG CSV ANYWHERE | D: TOGGLE THIS PANEL | G: GALLERY MODE</div>
+</div>
 
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/"}}</script>
 
@@ -80,12 +108,91 @@ import {ShaderPass} from 'three/addons/postprocessing/ShaderPass.js';
 // ═══════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════
-const PSEUDONYM_SETS=[
-  {name:'MYTHIC',Role1:'Orpheus',Role2:'Eurydice',Role3:'The Thorn',Role4:'The Fury',Role5:'The Ghost',Location:'The Crossroads'},
-  {name:'ARCHIVAL',Role1:'The Archivist',Role2:'The Echo',Role3:'The Shadow',Role4:'The Spark',Role5:'The Pattern',Location:'Point Zero'},
-  {name:'COSMIC',Role1:'The Weaver',Role2:'The Muse',Role3:'Mars',Role4:'The Witness',Role5:'Pan',Location:'The Stage'}
-];
 const ROLE_IDS=['Role1','Role2','Role3','Role4','Role5'];
+
+const DATA_PROFILES={
+  relationship:{
+    name:'RELATIONSHIP',desc:'Correspondence between two people — infidelity, conflict, repair',
+    dateCol:'Date',senderCol:'Sender',
+    conflictCols:['Infidelity_Fallout_Flag'],severeCols:['Mentions_Assault_Related'],
+    mentionCols:['Mentions_Role3','Mentions_Role4','Mentions_Role5'],
+    repairCol:'Repair_Attempt',admissionCol:'Specific_Admission',intensityCol:'Intensity',
+    pseudonyms:[
+      {name:'MYTHIC',Role1:'Orpheus',Role2:'Eurydice',Role3:'The Thorn',Role4:'The Fury',Role5:'The Ghost',Location:'The Crossroads'},
+      {name:'ARCHIVAL',Role1:'The Archivist',Role2:'The Echo',Role3:'The Shadow',Role4:'The Spark',Role5:'The Pattern',Location:'Point Zero'},
+      {name:'COSMIC',Role1:'The Weaver',Role2:'The Muse',Role3:'Mars',Role4:'The Witness',Role5:'Pan',Location:'The Stage'}
+    ],
+    sampleCols:'Date, Sender, Infidelity_Fallout_Flag, Mentions_Assault_Related, Mentions_Role3, Mentions_Role4, Mentions_Role5, Repair_Attempt, Specific_Admission, Intensity'
+  },
+  grief:{
+    name:'GRIEF',desc:'Loss timeline — anger, denial, memory, acceptance, breakthrough',
+    dateCol:'Date',senderCol:'Source',
+    conflictCols:['Anger_Flag','Denial_Flag'],severeCols:['Crisis_Event'],
+    mentionCols:['Mentions_Deceased','Mentions_Memory','Mentions_Guilt'],
+    repairCol:'Acceptance_Marker',admissionCol:'Breakthrough_Moment',intensityCol:'Emotional_Weight',
+    pseudonyms:[
+      {name:'PASSAGE',Role1:'The Mourner',Role2:'The Departed',Role3:'The Memory',Role4:'The Guilt',Role5:'The Light',Location:'The Threshold'},
+      {name:'SEASONS',Role1:'Winter',Role2:'The Garden',Role3:'Frost',Role4:'The Root',Role5:'Spring',Location:'The Soil'},
+      {name:'TIDES',Role1:'The Shore',Role2:'The Deep',Role3:'The Current',Role4:'The Storm',Role5:'The Calm',Location:'The Harbor'}
+    ],
+    sampleCols:'Date, Source, Anger_Flag, Denial_Flag, Crisis_Event, Mentions_Deceased, Mentions_Memory, Mentions_Guilt, Acceptance_Marker, Breakthrough_Moment, Emotional_Weight'
+  },
+  addiction:{
+    name:'RECOVERY',desc:'Addiction & recovery — relapse, triggers, milestones, honesty',
+    dateCol:'Date',senderCol:'Source',
+    conflictCols:['Relapse_Flag','Trigger_Event'],severeCols:['Overdose_Flag'],
+    mentionCols:['Mentions_Substance','Mentions_Enabler','Mentions_Support'],
+    repairCol:'Recovery_Step',admissionCol:'Honest_Disclosure',intensityCol:'Craving_Level',
+    pseudonyms:[
+      {name:'STRUGGLE',Role1:'The Fighter',Role2:'The Shadow',Role3:'The Needle',Role4:'The Enabler',Role5:'The Sponsor',Location:'The Crossroads'},
+      {name:'ELEMENTS',Role1:'Fire',Role2:'Water',Role3:'Smoke',Role4:'The Dealer',Role5:'The Circle',Location:'The Furnace'},
+      {name:'SUMMIT',Role1:'Sisyphus',Role2:'The Mountain',Role3:'The Stone',Role4:'Prometheus',Role5:'The Chain',Location:'The Peak'}
+    ],
+    sampleCols:'Date, Source, Relapse_Flag, Trigger_Event, Overdose_Flag, Mentions_Substance, Mentions_Enabler, Mentions_Support, Recovery_Step, Honest_Disclosure, Craving_Level'
+  },
+  political:{
+    name:'POLITICAL',desc:'Conflict mapping — violence, oppression, factions, peace, truth',
+    dateCol:'Date',senderCol:'Source',
+    conflictCols:['Violence_Event','Oppression_Flag'],severeCols:['Massacre_Flag'],
+    mentionCols:['Mentions_Faction_A','Mentions_Faction_B','Mentions_Civilian'],
+    repairCol:'Peace_Effort',admissionCol:'Truth_Commission',intensityCol:'Severity',
+    pseudonyms:[
+      {name:'POWER',Role1:'The State',Role2:'The People',Role3:'The Apparatus',Role4:'The Dissident',Role5:'The Witness',Location:'The Capitol'},
+      {name:'BORDERS',Role1:'The General',Role2:'The Civilian',Role3:'The Border',Role4:'The Refugee',Role5:'The Medic',Location:'The Front'},
+      {name:'JUSTICE',Role1:'The Court',Role2:'The Accused',Role3:'The Evidence',Role4:'The Victim',Role5:'The Jury',Location:'The Tribunal'}
+    ],
+    sampleCols:'Date, Source, Violence_Event, Oppression_Flag, Massacre_Flag, Mentions_Faction_A, Mentions_Faction_B, Mentions_Civilian, Peace_Effort, Truth_Commission, Severity'
+  },
+  climate:{
+    name:'CLIMATE',desc:'Environmental data — extreme weather, species loss, policy, tipping points',
+    dateCol:'Date',senderCol:'Source',
+    conflictCols:['Extreme_Weather','Pollution_Event'],severeCols:['Species_Loss'],
+    mentionCols:['Mentions_Region','Mentions_Industry','Mentions_Ecosystem'],
+    repairCol:'Conservation_Effort',admissionCol:'Tipping_Point',intensityCol:'Severity',
+    pseudonyms:[
+      {name:'EARTH',Role1:'The Atmosphere',Role2:'The Ocean',Role3:'Carbon',Role4:'The Storm',Role5:'The Species',Location:'The Tipping Point'},
+      {name:'FEVER',Role1:'Gaia',Role2:'The Fever',Role3:'The Burn',Role4:'The Flood',Role5:'The Seed',Location:'The Anthropocene'},
+      {name:'CYCLES',Role1:'The Sun',Role2:'The Ice',Role3:'The Methane',Role4:'The Wind',Role5:'The Coral',Location:'The Holocene'}
+    ],
+    sampleCols:'Date, Source, Extreme_Weather, Pollution_Event, Species_Loss, Mentions_Region, Mentions_Industry, Mentions_Ecosystem, Conservation_Effort, Tipping_Point, Severity'
+  },
+  medical:{
+    name:'MEDICAL',desc:'Health journey — diagnoses, setbacks, treatment, remission, acceptance',
+    dateCol:'Date',senderCol:'Source',
+    conflictCols:['Diagnosis_Flag','Setback_Flag'],severeCols:['Adverse_Reaction'],
+    mentionCols:['Mentions_Doctor','Mentions_Treatment','Mentions_Symptom'],
+    repairCol:'Positive_Result',admissionCol:'Acceptance_Moment',intensityCol:'Pain_Level',
+    pseudonyms:[
+      {name:'ANATOMY',Role1:'The Body',Role2:'The Disease',Role3:'The Scalpel',Role4:'The Cell',Role5:'The Nerve',Location:'The Ward'},
+      {name:'JOURNEY',Role1:'The Patient',Role2:'The Prognosis',Role3:'The Treatment',Role4:'The Side Effect',Role5:'The Remission',Location:'The Waiting Room'},
+      {name:'MYTHOLOGY',Role1:'Asclepius',Role2:'The Serpent',Role3:'The Wound',Role4:'The Herb',Role5:'The Dream',Location:'The Temple'}
+    ],
+    sampleCols:'Date, Source, Diagnosis_Flag, Setback_Flag, Adverse_Reaction, Mentions_Doctor, Mentions_Treatment, Mentions_Symptom, Positive_Result, Acceptance_Moment, Pain_Level'
+  }
+};
+
+let activeProfile='relationship';
+let PSEUDONYM_SETS=DATA_PROFILES.relationship.pseudonyms;
 const VISUAL_MODES=[
   {name:'FLOW',flow:1,organism:0,aurora:0,fracture:0},
   {name:'ORGANISM',flow:0,organism:1,aurora:0,fracture:0},
@@ -777,21 +884,141 @@ function displayPseudonyms(){
   document.getElementById('set-label').textContent=currentSet.name;
   document.getElementById('pseudonym-list').innerHTML=`${currentSet.Role1} / ${currentSet.Role2}<br>${currentSet.Role3} / ${currentSet.Role4} / ${currentSet.Role5}<br><span style="opacity:0.5">${currentSet.Location}</span>`;
 }
-function loadCSV(){
-  return new Promise((res,rej)=>{
-    Papa.parse('emails_analysis.csv',{
-      download:true,header:true,dynamicTyping:true,skipEmptyLines:true,
-      complete:r=>{
-        emailData=r.data.filter(r=>r.Date).map(r=>({
-          date:new Date(r.Date),dateStr:r.Date,sender:r.Sender||'',
-          infidelity:r.Infidelity_Fallout_Flag||0,assault:r.Mentions_Assault_Related||0,
-          frank:r.Mentions_Role3||0,sarah:r.Mentions_Role4||0,eric:r.Mentions_Role5||0,
-          repair:r.Repair_Attempt||0,admission:r.Specific_Admission||0,intensity:r.Intensity||0
-        }));
-        emailData.sort((a,b)=>a.date-b.date);res();
-      },error:rej
-    });
+// ═══════════════════════════════════════════
+// UNIVERSAL DATA ADAPTER
+// ═══════════════════════════════════════════
+function adaptRow(row, p){
+  const sumCols=(cols)=>(cols||[]).reduce((s,c)=>s+(row[c]||0),0)>0?1:0;
+  // auto-detect sender -> Role1/Role2
+  let sender=row[p.senderCol]||'';
+  if(!ROLE_IDS.includes(sender)) sender=sender; // kept as-is, mapped later
+  return{
+    date:new Date(row[p.dateCol]),dateStr:row[p.dateCol],sender,
+    infidelity:sumCols(p.conflictCols),assault:sumCols(p.severeCols),
+    frank:row[p.mentionCols[0]]||0,sarah:row[p.mentionCols[1]]||0,eric:row[p.mentionCols[2]]||0,
+    repair:row[p.repairCol]||0,admission:row[p.admissionCol]||0,
+    intensity:row[p.intensityCol]||0
+  };
+}
+function adaptData(csvRows, profileKey){
+  const p=DATA_PROFILES[profileKey];
+  const rows=csvRows.filter(r=>r[p.dateCol]);
+  // auto-map senders to Role1/Role2
+  const senderCounts={};
+  rows.forEach(r=>{const s=r[p.senderCol]||'';senderCounts[s]=(senderCounts[s]||0)+1;});
+  const sorted=Object.entries(senderCounts).sort((a,b)=>b[1]-a[1]);
+  const senderMap={};
+  if(sorted[0]) senderMap[sorted[0][0]]='Role1';
+  if(sorted[1]) senderMap[sorted[1][0]]='Role2';
+
+  const adapted=rows.map(r=>{
+    const entry=adaptRow(r,p);
+    if(senderMap[entry.sender]) entry.sender=senderMap[entry.sender];
+    else if(!ROLE_IDS.includes(entry.sender)) entry.sender='Role1';
+    return entry;
   });
+  adapted.sort((a,b)=>a.date-b.date);
+  return adapted;
+}
+
+function autoDetectProfile(headers){
+  let best='relationship',bestScore=0;
+  for(const[key,p] of Object.entries(DATA_PROFILES)){
+    const all=[p.dateCol,p.senderCol,...p.conflictCols,...(p.severeCols||[]),...p.mentionCols,p.repairCol,p.admissionCol,p.intensityCol];
+    const matched=all.filter(c=>headers.includes(c)).length;
+    const score=matched/all.length;
+    if(score>bestScore){bestScore=score;best=key;}
+  }
+  return{profile:best,confidence:bestScore};
+}
+
+function setProfile(key){
+  activeProfile=key;
+  PSEUDONYM_SETS=DATA_PROFILES[key].pseudonyms;
+  currentSet=PSEUDONYM_SETS[Math.floor(Math.random()*PSEUDONYM_SETS.length)];
+  displayPseudonyms();
+}
+
+function loadCSVFile(source){
+  return new Promise((res,rej)=>{
+    const opts={header:true,dynamicTyping:true,skipEmptyLines:true,
+      complete:r=>{
+        if(!r.data.length){rej('Empty CSV');return;}
+        const det=autoDetectProfile(r.meta.fields||[]);
+        if(det.confidence>.4) setProfile(det.profile);
+        emailData=adaptData(r.data,activeProfile);
+        res();
+      },error:rej
+    };
+    if(typeof source==='string'){opts.download=true;Papa.parse(source,opts);}
+    else Papa.parse(source,opts);
+  });
+}
+
+function loadCSV(){return loadCSVFile('emails_analysis.csv');}
+
+// ═══════════════════════════════════════════
+// DRAG-AND-DROP / PROFILE SELECTOR
+// ═══════════════════════════════════════════
+let galleryMode=false;
+
+function buildProfileGrid(){
+  const grid=document.getElementById('profile-grid');grid.innerHTML='';
+  for(const[key,p] of Object.entries(DATA_PROFILES)){
+    const card=document.createElement('div');
+    card.className='profile-card'+(key===activeProfile?' active':'');
+    card.innerHTML=`<h3>${p.name}</h3><p>${p.desc}</p><p style="margin-top:6px;opacity:.25;font-size:8px">${p.sampleCols}</p>`;
+    card.addEventListener('click',()=>{
+      setProfile(key);
+      grid.querySelectorAll('.profile-card').forEach(c=>c.classList.remove('active'));
+      card.classList.add('active');
+      if(emailData.length){
+        emailData=adaptData(emailData._raw||[],key);
+        if(emailData.length){prevEventIndex=-1;setupTimeline();updateTL();}
+      }
+    });
+    grid.appendChild(card);
+  }
+}
+
+function showDropOverlay(){document.getElementById('drop-overlay').classList.remove('hidden');}
+function hideDropOverlay(){document.getElementById('drop-overlay').classList.add('hidden');}
+
+function setupDragDrop(){
+  const overlay=document.getElementById('drop-overlay');
+  let dragCount=0;
+
+  document.addEventListener('dragenter',e=>{e.preventDefault();dragCount++;if(dragCount===1)overlay.classList.add('drag-hover');overlay.classList.remove('hidden');});
+  document.addEventListener('dragleave',e=>{e.preventDefault();dragCount--;if(dragCount<=0){dragCount=0;overlay.classList.remove('drag-hover');}});
+  document.addEventListener('dragover',e=>e.preventDefault());
+  document.addEventListener('drop',async e=>{
+    e.preventDefault();dragCount=0;overlay.classList.remove('drag-hover');
+    const file=e.dataTransfer.files[0];
+    if(!file||!file.name.endsWith('.csv')){return;}
+    try{
+      // store raw for re-adaptation
+      const rawRows=await new Promise((res,rej)=>{
+        Papa.parse(file,{header:true,dynamicTyping:true,skipEmptyLines:true,complete:r=>res(r.data),error:rej});
+      });
+      emailData._raw=rawRows;
+      const det=autoDetectProfile(Object.keys(rawRows[0]||{}));
+      if(det.confidence>.4) setProfile(det.profile);
+      emailData=adaptData(rawRows,activeProfile);
+      if(emailData.length){
+        prevEventIndex=-1;playProgress=0;
+        setupTimeline();updateTL();
+        if(!visualEngine){
+          visualEngine=new VisualEngine(document.getElementById('main-canvas'));
+          visualEngine.applyMode(VISUAL_MODES[visualModeIndex]);
+          requestAnimationFrame(render);
+        }
+        hideDropOverlay();
+      }
+    }catch(err){console.error('CSV parse error:',err);}
+  });
+
+  document.getElementById('drop-close').addEventListener('click',hideDropOverlay);
+  buildProfileGrid();
 }
 function setupTimeline(){
   const mk=document.getElementById('event-markers');mk.innerHTML='';
@@ -853,7 +1080,7 @@ function render(timestamp){
   lastTime=timestamp;
   const t=timestamp/1000;
 
-  if(playing){playProgress+=playSpeed;if(playProgress>=1){playProgress=1;playing=false;}updateTL();}
+  if(playing){playProgress+=playSpeed;if(playProgress>=1){if(galleryMode){playProgress=0;prevEventIndex=-1;}else{playProgress=1;playing=false;}}updateTL();}
 
   const result=getCurrent();if(!result) return;
   const{entry,index}=result;
@@ -900,11 +1127,23 @@ function setupInteraction(){
     playing=!playing;
     if(musicEngine){playing?musicEngine.start():musicEngine.stop();}
   };
-  document.addEventListener('click',e=>{if(!e.target.closest('#timeline-container')&&!e.target.closest('button')) toggle();});
+  document.addEventListener('click',e=>{
+    if(e.target.closest('#timeline-container')||e.target.closest('button')||e.target.closest('#drop-overlay')) return;
+    toggle();
+  });
   document.addEventListener('keydown',e=>{
-    if(e.key==='r'||e.key==='R'){currentSet=PSEUDONYM_SETS[(PSEUDONYM_SETS.indexOf(currentSet)+1)%3];displayPseudonyms();prevEventIndex=-1;}
+    if(e.key==='r'||e.key==='R'){currentSet=PSEUDONYM_SETS[(PSEUDONYM_SETS.indexOf(currentSet)+1)%PSEUDONYM_SETS.length];displayPseudonyms();prevEventIndex=-1;}
     if(e.key==='s'||e.key==='S'){visualModeIndex=(visualModeIndex+1)%VISUAL_MODES.length;document.getElementById('mode-display').textContent=VISUAL_MODES[visualModeIndex].name;}
     if(e.key===' '){e.preventDefault();toggle();}
+    if(e.key==='d'||e.key==='D'){
+      const ov=document.getElementById('drop-overlay');
+      ov.classList.contains('hidden')?showDropOverlay():hideDropOverlay();
+    }
+    if(e.key==='g'||e.key==='G'){
+      galleryMode=!galleryMode;
+      document.body.classList.toggle('gallery',galleryMode);
+      if(galleryMode&&!playing) toggle();
+    }
   });
   document.getElementById('screenshot-btn').addEventListener('click',()=>{
     visualEngine.render();
@@ -934,15 +1173,23 @@ async function initAudio(){
 // INIT
 // ═══════════════════════════════════════════
 async function init(){
-  displayPseudonyms();
+  setProfile('relationship');
   document.getElementById('mode-display').textContent=VISUAL_MODES[visualModeIndex].name;
-  try{await loadCSV();}catch(e){
-    console.error(e);document.getElementById('loading-text').textContent='CSV NOT FOUND';
-    document.getElementById('loading-text').style.color='#ff0040';return;
-  }
+  setupDragDrop();
+  setupInteraction();
+
+  let csvLoaded=false;
+  try{await loadCSV();csvLoaded=true;}catch(e){console.log('No default CSV, showing profile selector');}
+
   visualEngine=new VisualEngine(document.getElementById('main-canvas'));
   visualEngine.applyMode(VISUAL_MODES[visualModeIndex]);
-  setupTimeline();updateTL();setupInteraction();
+
+  if(csvLoaded){
+    setupTimeline();updateTL();
+  } else {
+    showDropOverlay();
+  }
+
   setTimeout(()=>{
     document.getElementById('loading-screen').classList.add('fade-out');
     setTimeout(()=>document.getElementById('loading-screen').style.display='none',800);
