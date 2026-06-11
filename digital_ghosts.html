@@ -7,788 +7,692 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-  background: #0a0a0a;
-  color: #00ff88;
-  font-family: 'Courier New', monospace;
-  overflow: hidden;
-  width: 100vw;
-  height: 100vh;
-  cursor: crosshair;
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#0a0a0a;color:#00ff88;font-family:'Courier New',monospace;overflow:hidden;width:100vw;height:100vh;cursor:crosshair;}
+#loading-screen{position:fixed;top:0;left:0;width:100%;height:100%;background:#0a0a0a;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1000;transition:opacity 0.8s ease;}
+#loading-screen.fade-out{opacity:0;pointer-events:none;}
+#loading-text{font-size:24px;color:#00ff88;letter-spacing:8px;animation:glitch 0.3s infinite;}
+@keyframes glitch{
+  0%{transform:translate(0);text-shadow:2px 0 #ff0040,-2px 0 #00ff88;}
+  25%{transform:translate(-2px,1px);text-shadow:-2px 0 #ff0040,2px 0 #00ff88;}
+  50%{transform:translate(1px,-1px);text-shadow:1px 0 #ff0040,-1px 0 #00ff88;}
+  75%{transform:translate(-1px,2px);text-shadow:-1px 0 #ff0040,1px 0 #00ff88;}
+  100%{transform:translate(0);text-shadow:2px 0 #ff0040,-2px 0 #00ff88;}
 }
-#loading-screen {
-  position: fixed; top: 0; left: 0;
-  width: 100%; height: 100%;
-  background: #0a0a0a;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  z-index: 1000;
-  transition: opacity 0.8s ease;
-}
-#loading-screen.fade-out { opacity: 0; pointer-events: none; }
-#loading-text {
-  font-size: 24px; color: #00ff88;
-  letter-spacing: 8px;
-  animation: glitch 0.3s infinite;
-}
-@keyframes glitch {
-  0%   { transform: translate(0);       text-shadow: 2px 0 #ff0040, -2px 0 #00ff88; }
-  25%  { transform: translate(-2px,1px); text-shadow:-2px 0 #ff0040,  2px 0 #00ff88; }
-  50%  { transform: translate(1px,-1px); text-shadow: 1px 0 #ff0040, -1px 0 #00ff88; }
-  75%  { transform: translate(-1px,2px); text-shadow:-1px 0 #ff0040,  1px 0 #00ff88; }
-  100% { transform: translate(0);       text-shadow: 2px 0 #ff0040, -2px 0 #00ff88; }
-}
-#loading-bar {
-  width: 300px; height: 2px;
-  background: #1a1a1a;
-  margin-top: 30px;
-  position: relative; overflow: hidden;
-}
-#loading-bar::after {
-  content: ''; position: absolute;
-  top: 0; left: -100%;
-  width: 100%; height: 100%;
-  background: #00ff88;
-  animation: load-sweep 1.5s ease-in-out infinite;
-}
-@keyframes load-sweep { 0% { left:-100%; } 100% { left:100%; } }
-canvas { display: block; width: 100%; height: 100%; position: fixed; top: 0; left: 0; }
-#pseudonym-display {
-  position: fixed; top: 20px; right: 20px;
-  text-align: right; font-size: 11px;
-  opacity: 0.4; line-height: 1.6;
-  z-index: 10; pointer-events: none;
-  transition: opacity 0.3s;
-}
-#pseudonym-display:hover { opacity: 0.8; }
-#set-label { font-size: 9px; opacity: 0.5; margin-bottom: 6px; letter-spacing: 4px; text-transform: uppercase; }
-#timeline-container {
-  position: fixed; bottom: 0; left: 0;
-  width: 100%; height: 60px;
-  background: linear-gradient(transparent, rgba(10,10,10,0.95));
-  z-index: 10; padding: 10px 40px;
-}
-#timeline-track {
-  width: 100%; height: 4px;
-  background: #1a1a1a;
-  position: relative; cursor: pointer;
-  margin-top: 15px; border-radius: 2px;
-}
-#timeline-progress {
-  height: 100%; background: #00ff88;
-  border-radius: 2px; width: 0%;
-  transition: width 0.1s linear;
-  box-shadow: 0 0 8px #00ff8855;
-}
-#timeline-playhead {
-  position: absolute; top: -6px;
-  width: 16px; height: 16px;
-  background: #00ff88; border-radius: 50%;
-  transform: translateX(-50%); cursor: grab;
-  box-shadow: 0 0 12px #00ff88aa; left: 0%;
-}
-#timeline-date { font-size: 11px; text-align: center; margin-top: 10px; opacity: 0.6; letter-spacing: 3px; }
-#event-markers { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-.event-marker { position: absolute; top: -3px; width: 3px; height: 10px; border-radius: 1px; pointer-events: all; cursor: pointer; }
-.event-marker.conflict { background: #ff0040; }
-.event-marker.repair { background: #00aaff; }
-.event-marker.admission { background: #ffffff; }
-.event-marker.neutral { background: #00ff8844; }
-#tooltip {
-  position: fixed; background: #111;
-  border: 1px solid #00ff8844;
-  padding: 8px 12px; font-size: 10px;
-  color: #00ff88; pointer-events: none;
-  z-index: 100; display: none;
-  max-width: 250px; line-height: 1.5; letter-spacing: 1px;
-}
-#controls-hint {
-  position: fixed; bottom: 70px; left: 40px;
-  font-size: 9px; opacity: 0.25;
-  letter-spacing: 2px; z-index: 10;
-}
-#status-display {
-  position: fixed; top: 20px; left: 20px;
-  font-size: 10px; opacity: 0.3;
-  z-index: 10; letter-spacing: 2px;
-}
-#mode-display {
-  position: fixed; top: 36px; left: 20px;
-  font-size: 9px; opacity: 0.2;
-  z-index: 10; letter-spacing: 3px;
-}
-#record-btn, #screenshot-btn {
-  position: fixed; top: 20px; z-index: 20;
-  background: none; border: 1px solid #00ff8844;
-  color: #00ff88; font-family: 'Courier New', monospace;
-  font-size: 9px; padding: 4px 10px;
-  cursor: pointer; letter-spacing: 2px;
-  opacity: 0.4; transition: opacity 0.3s;
-}
-#record-btn:hover, #screenshot-btn:hover { opacity: 0.9; }
-#record-btn { left: 50%; transform: translateX(-60px); }
-#screenshot-btn { left: 50%; transform: translateX(20px); }
-#record-btn.recording { border-color: #ff0040; color: #ff0040; opacity: 0.9; }
-#flash-overlay {
-  position: fixed; top: 0; left: 0;
-  width: 100%; height: 100%;
-  background: white; opacity: 0;
-  pointer-events: none; z-index: 50;
-  transition: opacity 0.05s;
-}
+#loading-bar{width:300px;height:2px;background:#1a1a1a;margin-top:30px;position:relative;overflow:hidden;}
+#loading-bar::after{content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;background:#00ff88;animation:load-sweep 1.5s ease-in-out infinite;}
+@keyframes load-sweep{0%{left:-100%;}100%{left:100%;}}
+canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0;}
+#pseudonym-display{position:fixed;top:20px;right:20px;text-align:right;font-size:11px;opacity:0.4;line-height:1.6;z-index:10;pointer-events:none;transition:opacity 0.3s;}
+#pseudonym-display:hover{opacity:0.8;}
+#set-label{font-size:9px;opacity:0.5;margin-bottom:6px;letter-spacing:4px;text-transform:uppercase;}
+#timeline-container{position:fixed;bottom:0;left:0;width:100%;height:60px;background:linear-gradient(transparent,rgba(10,10,10,0.95));z-index:10;padding:10px 40px;}
+#timeline-track{width:100%;height:4px;background:#1a1a1a;position:relative;cursor:pointer;margin-top:15px;border-radius:2px;}
+#timeline-progress{height:100%;background:#00ff88;border-radius:2px;width:0%;box-shadow:0 0 8px #00ff8855;}
+#timeline-playhead{position:absolute;top:-6px;width:16px;height:16px;background:#00ff88;border-radius:50%;transform:translateX(-50%);cursor:grab;box-shadow:0 0 12px #00ff88aa;left:0%;}
+#timeline-date{font-size:11px;text-align:center;margin-top:10px;opacity:0.6;letter-spacing:3px;}
+#event-markers{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;}
+.event-marker{position:absolute;top:-3px;width:3px;height:10px;border-radius:1px;pointer-events:all;cursor:pointer;}
+.event-marker.conflict{background:#ff0040;}
+.event-marker.repair{background:#00aaff;}
+.event-marker.admission{background:#ffffff;}
+.event-marker.neutral{background:#00ff8844;}
+#tooltip{position:fixed;background:#111;border:1px solid #00ff8844;padding:8px 12px;font-size:10px;color:#00ff88;pointer-events:none;z-index:100;display:none;max-width:250px;line-height:1.5;letter-spacing:1px;}
+#controls-hint{position:fixed;bottom:70px;left:40px;font-size:9px;opacity:0.25;letter-spacing:2px;z-index:10;}
+#status-display{position:fixed;top:20px;left:20px;font-size:10px;opacity:0.3;z-index:10;letter-spacing:2px;}
+#mode-display{position:fixed;top:36px;left:20px;font-size:9px;opacity:0.2;z-index:10;letter-spacing:3px;}
+#damage-bar{position:fixed;left:20px;top:54px;width:80px;height:2px;background:#1a1a1a;z-index:10;opacity:0.3;}
+#damage-fill{height:100%;width:0%;background:linear-gradient(90deg,#00ff88,#ff0040);transition:width 0.5s;}
+#record-btn,#screenshot-btn{position:fixed;top:20px;z-index:20;background:none;border:1px solid #00ff8844;color:#00ff88;font-family:'Courier New',monospace;font-size:9px;padding:4px 10px;cursor:pointer;letter-spacing:2px;opacity:0.4;transition:opacity 0.3s;}
+#record-btn:hover,#screenshot-btn:hover{opacity:0.9;}
+#record-btn{left:50%;transform:translateX(-60px);}
+#screenshot-btn{left:50%;transform:translateX(20px);}
+#record-btn.recording{border-color:#ff0040;color:#ff0040;opacity:0.9;}
+#flash-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:white;opacity:0;pointer-events:none;z-index:50;transition:opacity 0.05s;}
 </style>
 </head>
 <body>
-
-<div id="loading-screen">
-  <div id="loading-text">LOADING GHOSTS...</div>
-  <div id="loading-bar"></div>
-</div>
-
+<div id="loading-screen"><div id="loading-text">LOADING GHOSTS...</div><div id="loading-bar"></div></div>
 <canvas id="main-canvas"></canvas>
-
-<div id="pseudonym-display">
-  <div id="set-label"></div>
-  <div id="pseudonym-list"></div>
-</div>
-
-<div id="status-display">
-  <span id="play-state">PAUSED</span> | <span id="current-sender">---</span>
-</div>
+<div id="pseudonym-display"><div id="set-label"></div><div id="pseudonym-list"></div></div>
+<div id="status-display"><span id="play-state">PAUSED</span> | <span id="current-sender">---</span></div>
 <div id="mode-display">---</div>
-
+<div id="damage-bar"><div id="damage-fill"></div></div>
 <div id="timeline-container">
-  <div id="timeline-track">
-    <div id="timeline-progress"></div>
-    <div id="timeline-playhead"></div>
-    <div id="event-markers"></div>
-  </div>
+  <div id="timeline-track"><div id="timeline-progress"></div><div id="timeline-playhead"></div><div id="event-markers"></div></div>
   <div id="timeline-date">---</div>
 </div>
-
-<div id="controls-hint">
-  CLICK: PLAY/PAUSE &nbsp; SCRUB: TIMELINE &nbsp; R: RETHEME &nbsp; S: RESTYLE
-</div>
-
+<div id="controls-hint">CLICK: PLAY/PAUSE &nbsp; SCRUB: TIMELINE &nbsp; R: RETHEME &nbsp; S: RESTYLE</div>
 <button id="record-btn">REC</button>
 <button id="screenshot-btn">PNG</button>
-
 <div id="tooltip"></div>
 <div id="flash-overlay"></div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/"
-  }
-}
-</script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/"}}</script>
 
 <script type="module">
 import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
+import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
+import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
+import {ShaderPass} from 'three/addons/postprocessing/ShaderPass.js';
 
-// ════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
 // CONSTANTS
-// ════════════════════════════════════════════════════════════════
-
-const PSEUDONYM_SETS = [
-  { name:'MYTHIC', Role1:'Orpheus', Role2:'Eurydice', Role3:'The Thorn', Role4:'The Fury', Role5:'The Ghost', Location:'The Crossroads' },
-  { name:'ARCHIVAL', Role1:'The Archivist', Role2:'The Echo', Role3:'The Shadow', Role4:'The Spark', Role5:'The Pattern', Location:'Point Zero' },
-  { name:'COSMIC', Role1:'The Weaver', Role2:'The Muse', Role3:'Mars', Role4:'The Witness', Role5:'Pan', Location:'The Stage' }
+// ═══════════════════════════════════════════
+const PSEUDONYM_SETS=[
+  {name:'MYTHIC',Role1:'Orpheus',Role2:'Eurydice',Role3:'The Thorn',Role4:'The Fury',Role5:'The Ghost',Location:'The Crossroads'},
+  {name:'ARCHIVAL',Role1:'The Archivist',Role2:'The Echo',Role3:'The Shadow',Role4:'The Spark',Role5:'The Pattern',Location:'Point Zero'},
+  {name:'COSMIC',Role1:'The Weaver',Role2:'The Muse',Role3:'Mars',Role4:'The Witness',Role5:'Pan',Location:'The Stage'}
 ];
-const ROLE_IDS = ['Role1','Role2','Role3','Role4','Role5'];
-
-const VISUAL_MODES = [
-  { name:'FLOW',             flow:true,  organism:false, aurora:false },
-  { name:'ORGANISM',         flow:false, organism:true,  aurora:false },
-  { name:'AURORA',           flow:false, organism:false, aurora:true  },
-  { name:'FLOW + ORGANISM',  flow:true,  organism:true,  aurora:false },
-  { name:'FLOW + AURORA',    flow:true,  organism:false, aurora:true  },
-  { name:'ORGANISM + AURORA',flow:false, organism:true,  aurora:true  },
-  { name:'CONVERGENCE',      flow:true,  organism:true,  aurora:true  }
+const ROLE_IDS=['Role1','Role2','Role3','Role4','Role5'];
+const VISUAL_MODES=[
+  {name:'FLOW',flow:1,organism:0,aurora:0,fracture:0},
+  {name:'ORGANISM',flow:0,organism:1,aurora:0,fracture:0},
+  {name:'AURORA',flow:0,organism:0,aurora:1,fracture:0},
+  {name:'FRACTURE',flow:0,organism:0,aurora:0,fracture:1},
+  {name:'FLOW + ORGANISM',flow:1,organism:1,aurora:0,fracture:0},
+  {name:'FLOW + AURORA',flow:1,organism:0,aurora:1,fracture:0},
+  {name:'ORGANISM + FRACTURE',flow:0,organism:1,aurora:0,fracture:1},
+  {name:'AURORA + FRACTURE',flow:0,organism:0,aurora:1,fracture:1},
+  {name:'CONVERGENCE',flow:1,organism:1,aurora:1,fracture:0}
 ];
 
-// ════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
 // STATE
-// ════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
+let currentSet=PSEUDONYM_SETS[Math.floor(Math.random()*3)];
+let emailData=[], playing=false, playProgress=0, playSpeed=0.0002;
+let audioStarted=false, audioInitialized=false, musicEngine=null, fftAnalyzer=null;
+let prevEventIndex=-1;
+let visualModeIndex=Math.floor(Math.random()*VISUAL_MODES.length);
+let currentDamage=0;
+// smooth interpolation targets
+let sDamage=0,sConflict=0,sRepair=0,sBass=0,sMids=0,sHighs=0,sPulse=0;
+let shakeAmount=0, flashOpacity=0, freezeFrameUntil=0;
 
-let currentSet = PSEUDONYM_SETS[Math.floor(Math.random()*PSEUDONYM_SETS.length)];
-let emailData = [];
-let playing = false;
-let playProgress = 0;
-let playSpeed = 0.0002;
-let audioStarted = false;
-let audioInitialized = false;
-let musicEngine = null;
-let shakeAmount = 0;
-let desaturation = 0;
-let flashOpacity = 0;
-let freezeFrameUntil = 0;
-let prevEventIndex = -1;
-let visualModeIndex = Math.floor(Math.random()*VISUAL_MODES.length);
-let currentDamage = 0;
-let fftAnalyzer = null;
-
-// ════════════════════════════════════════════════════════════════
-// JS NOISE (for CPU particle curl noise)
-// ════════════════════════════════════════════════════════════════
-
-function hashN(n) { return ((Math.sin(n)*43758.5453123)%1+1)%1; }
-function noise3(x,y,z) {
-  const ix=Math.floor(x), iy=Math.floor(y), iz=Math.floor(z);
-  const fx=x-ix, fy=y-iy, fz=z-iz;
-  const ux=fx*fx*(3-2*fx), uy=fy*fy*(3-2*fy), uz=fz*fz*(3-2*fz);
-  const n=ix*1.0+iy*157.0+iz*113.0;
-  const a=hashN(n),b=hashN(n+1),c=hashN(n+157),d=hashN(n+158);
-  const e=hashN(n+113),f=hashN(n+114),g=hashN(n+270),h=hashN(n+271);
+// ═══════════════════════════════════════════
+// JS NOISE
+// ═══════════════════════════════════════════
+function hN(n){return((Math.sin(n)*43758.5453123)%1+1)%1;}
+function n3(x,y,z){
+  const ix=Math.floor(x),iy=Math.floor(y),iz=Math.floor(z);
+  const fx=x-ix,fy=y-iy,fz=z-iz;
+  const ux=fx*fx*(3-2*fx),uy=fy*fy*(3-2*fy),uz=fz*fz*(3-2*fz);
+  const n=ix+iy*157+iz*113;
+  const a=hN(n),b=hN(n+1),c=hN(n+157),d=hN(n+158),e=hN(n+113),f=hN(n+114),g=hN(n+270),h=hN(n+271);
   return a+(b-a)*ux+(c-a)*uy+(a-b-c+d)*ux*uy+(e-a)*uz+(a-b-e+f)*ux*uz+(a-c-e+g)*uy*uz+(-a+b+c-d+e-f-g+h)*ux*uy*uz;
 }
-function curlNoise3D(x,y,z,t) {
-  const e=0.01, s=0.8;
-  const px=x*s,py=y*s,pz=z*s+t;
-  const dx=noise3(px+e,py,pz)-noise3(px-e,py,pz);
-  const dy=noise3(px,py+e,pz)-noise3(px,py-e,pz);
-  const dz=noise3(px,py,pz+e)-noise3(px,py,pz-e);
-  return { x:(dy-dz)/(2*e), y:(dz-dx)/(2*e), z:(dx-dy)/(2*e) };
+function curl3D(x,y,z,t){
+  const e=0.01,s=0.8,px=x*s,py=y*s,pz=z*s+t;
+  const dx=n3(px+e,py,pz)-n3(px-e,py,pz),dy=n3(px,py+e,pz)-n3(px,py-e,pz),dz=n3(px,py,pz+e)-n3(px,py,pz-e);
+  return{x:(dy-dz)/(2*e),y:(dz-dx)/(2*e),z:(dx-dy)/(2*e)};
 }
 
-// ════════════════════════════════════════════════════════════════
-// GLSL SHARED NOISE
-// ════════════════════════════════════════════════════════════════
-
-const GLSL_NOISE = `
-vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
-vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
-vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
-vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
-
+// ═══════════════════════════════════════════
+// GLSL SHARED
+// ═══════════════════════════════════════════
+const GLSL_NOISE=`
+vec3 mod289(vec3 x){return x-floor(x*(1./289.))*289.;}
+vec4 mod289(vec4 x){return x-floor(x*(1./289.))*289.;}
+vec4 permute(vec4 x){return mod289(((x*34.)+1.)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-.85373472095314*r;}
 float snoise(vec3 v){
-  const vec2 C=vec2(1.0/6.0,1.0/3.0);
-  const vec4 D=vec4(0.0,0.5,1.0,2.0);
-  vec3 i=floor(v+dot(v,C.yyy));
-  vec3 x0=v-i+dot(i,C.xxx);
-  vec3 g=step(x0.yzx,x0.xyz);
-  vec3 l=1.0-g;
-  vec3 i1=min(g.xyz,l.zxy);
-  vec3 i2=max(g.xyz,l.zxy);
-  vec3 x1=x0-i1+C.xxx;
-  vec3 x2=x0-i2+C.yyy;
-  vec3 x3=x0-D.yyy;
+  const vec2 C=vec2(1./6.,1./3.);const vec4 D=vec4(0.,.5,1.,2.);
+  vec3 i=floor(v+dot(v,C.yyy)),x0=v-i+dot(i,C.xxx);
+  vec3 g=step(x0.yzx,x0.xyz),l=1.-g,i1=min(g,l.zxy),i2=max(g,l.zxy);
+  vec3 x1=x0-i1+C.xxx,x2=x0-i2+C.yyy,x3=x0-D.yyy;
   i=mod289(i);
-  vec4 p=permute(permute(permute(
-    i.z+vec4(0.0,i1.z,i2.z,1.0))
-    +i.y+vec4(0.0,i1.y,i2.y,1.0))
-    +i.x+vec4(0.0,i1.x,i2.x,1.0));
-  float n_=0.142857142857;
-  vec3 ns=n_*D.wyz-D.xzx;
-  vec4 j=p-49.0*floor(p*ns.z*ns.z);
-  vec4 x_=floor(j*ns.z);
-  vec4 y_=floor(j-7.0*x_);
-  vec4 x=x_*ns.x+ns.yyyy;
-  vec4 y=y_*ns.x+ns.yyyy;
-  vec4 h=1.0-abs(x)-abs(y);
-  vec4 b0=vec4(x.xy,y.xy);
-  vec4 b1=vec4(x.zw,y.zw);
-  vec4 s0=floor(b0)*2.0+1.0;
-  vec4 s1=floor(b1)*2.0+1.0;
-  vec4 sh=-step(h,vec4(0.0));
-  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy;
-  vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
-  vec3 p0=vec3(a0.xy,h.x);
-  vec3 p1=vec3(a0.zw,h.y);
-  vec3 p2=vec3(a1.xy,h.z);
-  vec3 p3=vec3(a1.zw,h.w);
+  vec4 p=permute(permute(permute(i.z+vec4(0.,i1.z,i2.z,1.))+i.y+vec4(0.,i1.y,i2.y,1.))+i.x+vec4(0.,i1.x,i2.x,1.));
+  float n_=.142857142857;vec3 ns=n_*D.wyz-D.xzx;
+  vec4 j=p-49.*floor(p*ns.z*ns.z),x_=floor(j*ns.z),y_=floor(j-7.*x_);
+  vec4 x=x_*ns.x+ns.yyyy,y=y_*ns.x+ns.yyyy,h=1.-abs(x)-abs(y);
+  vec4 b0=vec4(x.xy,y.xy),b1=vec4(x.zw,y.zw);
+  vec4 s0=floor(b0)*2.+1.,s1=floor(b1)*2.+1.,sh=-step(h,vec4(0.));
+  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy,a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x),p1=vec3(a0.zw,h.y),p2=vec3(a1.xy,h.z),p3=vec3(a1.zw,h.w);
   vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
   p0*=norm.x;p1*=norm.y;p2*=norm.z;p3*=norm.w;
-  vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0);
-  m=m*m;
-  return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+  vec4 m=max(.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.);m=m*m;
+  return 42.*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
 }
-
-float fbm(vec3 p){
-  float f=0.0,a=0.5;
-  for(int i=0;i<5;i++){f+=a*snoise(p);p*=2.0;a*=0.5;}
-  return f;
-}
+float fbm(vec3 p){float f=0.,a=.5;for(int i=0;i<6;i++){f+=a*snoise(p);p*=2.03;a*=.48;}return f;}
+float fbm4(vec3 p){float f=0.,a=.5;for(int i=0;i<4;i++){f+=a*snoise(p);p*=2.;a*=.5;}return f;}
 `;
 
-// ════════════════════════════════════════════════════════════════
-// ORGANISM SHADER (ray-marched SDFs)
-// ════════════════════════════════════════════════════════════════
-
-const ORGANISM_FRAG = GLSL_NOISE + `
-precision highp float;
-uniform float u_time;
-uniform float u_damage;
-uniform float u_conflict;
-uniform float u_repair;
-uniform float u_bass;
-uniform float u_mids;
+const GLSL_UNIFORMS=`
+uniform float u_time,u_damage,u_conflict,u_repair,u_bass,u_mids,u_highs,u_pulse;
 uniform vec2 u_resolution;
+`;
+
+// ═══════════════════════════════════════════
+// ORGANISM SHADER
+// ═══════════════════════════════════════════
+const ORGANISM_FRAG=GLSL_NOISE+`
+precision highp float;
+${GLSL_UNIFORMS}
 
 float sdSphere(vec3 p,float r){return length(p)-r;}
 
 float scene(vec3 p){
-  float sep=mix(0.6,3.0,u_conflict);
-  if(u_repair>0.3) sep=mix(sep,0.3,u_repair);
-  float t=u_time*0.3;
-  vec3 p1=p-vec3(-sep,sin(t)*0.6,cos(t*0.7)*0.4);
-  vec3 p2=p-vec3(sep,cos(t*0.8)*0.6,sin(t*0.6)*0.4);
-  float ns=0.3+u_damage*2.5;
-  float n1=snoise(p1*ns+t*0.3)*u_damage*0.6;
-  float n2=snoise(p2*ns+t*0.25)*u_damage*0.6;
-  float d1=sdSphere(p1,1.0+u_bass*0.4)+n1;
-  float d2=sdSphere(p2,0.85+u_mids*0.35)+n2;
-  float k=mix(1.0,0.15,u_damage);
-  float h=clamp(0.5+0.5*(d2-d1)/k,0.0,1.0);
-  float d=mix(d2,d1,h)-k*h*(1.0-h);
-  if(u_damage>0.5){
-    float spike=snoise(p*4.0+u_time*0.5)*0.3*(u_damage-0.5);
+  float sep=mix(.6,3.5,u_conflict);
+  if(u_repair>.3) sep=mix(sep,.2,u_repair);
+  float t=u_time*.3;
+  vec3 p1=p-vec3(-sep,sin(t)*.6+sin(t*1.7)*.2,cos(t*.7)*.4);
+  vec3 p2=p-vec3(sep,cos(t*.8)*.6+cos(t*1.3)*.2,sin(t*.6)*.4);
+  float ns=.3+u_damage*3.;
+  float n1=snoise(p1*ns+t*.3)*u_damage*.7;
+  float n2=snoise(p2*ns+t*.25)*u_damage*.7;
+  float d1=sdSphere(p1,1.+u_bass*.5+u_pulse*.3)+n1;
+  float d2=sdSphere(p2,.85+u_mids*.4+u_pulse*.2)+n2;
+  float k=mix(1.,.1,u_damage);
+  float h=clamp(.5+.5*(d2-d1)/k,0.,1.);
+  float d=mix(d2,d1,h)-k*h*(1.-h);
+  if(u_damage>.4){
+    float spike=snoise(p*5.+u_time*.6)*.35*(u_damage-.4);
     d+=spike;
   }
   return d;
 }
-
-vec3 calcN(vec3 p){
-  vec2 e=vec2(0.002,0.0);
-  return normalize(vec3(scene(p+e.xyy)-scene(p-e.xyy),scene(p+e.yxy)-scene(p-e.yxy),scene(p+e.yyx)-scene(p-e.yyx)));
-}
+vec3 calcN(vec3 p){vec2 e=vec2(.002,0.);return normalize(vec3(scene(p+e.xyy)-scene(p-e.xyy),scene(p+e.yxy)-scene(p-e.yxy),scene(p+e.yyx)-scene(p-e.yyx)));}
 
 void main(){
-  vec2 uv=(gl_FragCoord.xy-0.5*u_resolution)/min(u_resolution.x,u_resolution.y);
-  vec3 ro=vec3(0.0,0.0,4.5);
-  vec3 rd=normalize(vec3(uv,-1.5));
-  float t=0.0;
-  for(int i=0;i<64;i++){
-    float d=scene(ro+rd*t);
-    if(d<0.002||t>20.0) break;
-    t+=d;
-  }
-  vec3 col=vec3(0.0);
-  if(t<20.0){
-    vec3 p=ro+rd*t;
-    vec3 n=calcN(p);
-    float rim=1.0-max(0.0,dot(n,-rd));
-    rim=pow(rim,2.5);
-    vec3 peaceful=vec3(0.05,0.3,0.7);
-    vec3 damaged=vec3(0.7,0.05,0.15);
+  vec2 uv=(gl_FragCoord.xy-.5*u_resolution)/min(u_resolution.x,u_resolution.y);
+  vec3 ro=vec3(0.,0.,4.5+sin(u_time*.1)*.3),rd=normalize(vec3(uv,-1.5));
+  float t=0.;
+  for(int i=0;i<80;i++){float d=scene(ro+rd*t);if(d<.001||t>20.)break;t+=d*.9;}
+  vec3 col=vec3(0.);
+  if(t<20.){
+    vec3 p=ro+rd*t,n=calcN(p);
+    float rim=pow(1.-max(0.,dot(n,-rd)),2.5);
+    float fres=pow(1.-max(0.,dot(n,-rd)),5.);
+    vec3 peaceful=vec3(.05,.25,.65);
+    vec3 damaged=vec3(.65,.05,.12);
     vec3 base=mix(peaceful,damaged,u_damage);
-    col=base*rim*2.5;
-    col+=base*0.08;
-    col+=vec3(0.0,0.9,0.5)*pow(rim,6.0)*0.4*(1.0-u_damage);
-    col+=vec3(0.9,0.2,0.1)*pow(rim,4.0)*0.5*u_damage;
+    // subsurface-like glow
+    float sss=max(0.,dot(n,normalize(vec3(1.,1.,1.))))*.3;
+    col=base*rim*2.5+base*sss*(1.+u_damage);
+    col+=vec3(0.,.8,.45)*fres*.5*(1.-u_damage);
+    col+=vec3(.85,.15,.08)*fres*.6*u_damage;
+    col+=base*u_pulse*.5;
   }
-  gl_FragColor=vec4(col,1.0);
-}
-`;
+  gl_FragColor=vec4(col,1.);
+}`;
 
-// ════════════════════════════════════════════════════════════════
-// AURORA SHADER (fractal noise curtains)
-// ════════════════════════════════════════════════════════════════
-
-const AURORA_FRAG = GLSL_NOISE + `
+// ═══════════════════════════════════════════
+// AURORA SHADER
+// ═══════════════════════════════════════════
+const AURORA_FRAG=GLSL_NOISE+`
 precision highp float;
-uniform float u_time;
-uniform float u_damage;
-uniform float u_conflict;
-uniform float u_repair;
-uniform float u_bass;
-uniform float u_highs;
-uniform vec2 u_resolution;
+${GLSL_UNIFORMS}
 
-float hashN(float n){return fract(sin(n)*43758.5453123);}
-
-vec3 palette(float t,float dmg){
-  vec3 a=mix(vec3(0.0,0.15,0.3),vec3(0.3,0.05,0.05),dmg);
-  vec3 b=mix(vec3(0.0,0.5,0.3),vec3(0.5,0.1,0.0),dmg);
-  vec3 c=mix(vec3(0.1,0.4,0.8),vec3(0.8,0.2,0.1),dmg);
-  vec3 d=mix(vec3(0.0,0.3,0.5),vec3(0.6,0.0,0.2),dmg);
-  return a+b*cos(6.28318*(c*t+d));
+vec3 palette(float t,float d){
+  vec3 a=mix(vec3(.0,.12,.25),vec3(.25,.04,.04),d);
+  vec3 b=mix(vec3(.0,.45,.25),vec3(.45,.08,.0),d);
+  vec3 c=mix(vec3(.1,.35,.75),vec3(.75,.15,.08),d);
+  vec3 dd=mix(vec3(.0,.25,.45),vec3(.55,.0,.15),d);
+  return a+b*cos(6.28318*(c*t+dd));
 }
+float hsh(float n){return fract(sin(n)*43758.5453);}
 
 void main(){
   vec2 uv=gl_FragCoord.xy/u_resolution;
-  vec2 p=(gl_FragCoord.xy-0.5*u_resolution)/u_resolution.y;
-  float t=u_time*0.15;
-  float turb=0.5+u_damage*2.0;
-  float n1=fbm(vec3(p.x*1.5,p.y*0.8+t,t*0.3)*turb);
-  float n2=fbm(vec3(p.x*2.0+3.0,p.y*1.2+t*0.7,t*0.4+5.0)*turb);
-  float n3=fbm(vec3(p.x*0.8+7.0,p.y*2.0+t*0.5,t*0.2+10.0)*turb);
-  float curtain=0.0;
-  curtain+=smoothstep(0.0,0.6,n1+0.3)*0.5;
-  curtain+=smoothstep(0.1,0.7,n2+0.2)*0.35;
-  curtain+=smoothstep(0.2,0.8,n3+0.1)*0.25;
-  curtain*=smoothstep(0.0,0.3,uv.y)*smoothstep(1.0,0.5,uv.y);
-  curtain+=u_bass*0.2;
-  vec3 col=palette(curtain*0.5+n1*0.3,u_damage)*curtain;
-  col+=vec3(0.0,0.8,0.4)*u_highs*0.1*curtain;
-  if(u_conflict>0.3){
-    float glitch=step(0.97,hashN(floor(uv.y*40.0+u_time*10.0)));
-    col=mix(col,vec3(0.8,0.0,0.2),glitch*u_conflict*0.6);
+  vec2 p=(gl_FragCoord.xy-.5*u_resolution)/u_resolution.y;
+  float t=u_time*.12;
+  float turb=.5+u_damage*2.5;
+  float n1=fbm(vec3(p.x*1.5,p.y*.8+t,t*.3)*turb);
+  float n2=fbm(vec3(p.x*2.+3.,p.y*1.2+t*.7,t*.4+5.)*turb);
+  float n3=fbm(vec3(p.x*.8+7.,p.y*2.+t*.5,t*.2+10.)*turb);
+  float n4=fbm4(vec3(p*3.+15.,t*.6)*turb)*.15;
+  float curtain=0.;
+  curtain+=smoothstep(0.,.6,n1+.3)*.5;
+  curtain+=smoothstep(.1,.7,n2+.2)*.35;
+  curtain+=smoothstep(.2,.8,n3+.1)*.25;
+  curtain+=n4;
+  curtain*=smoothstep(0.,.3,uv.y)*smoothstep(1.,.5,uv.y);
+  curtain+=u_bass*.25+u_pulse*.3;
+  vec3 col=palette(curtain*.5+n1*.3,u_damage)*curtain;
+  // shimmer
+  float shimmer=snoise(vec3(p*20.,u_time*2.))*.5+.5;
+  col+=vec3(.3,.8,.5)*shimmer*u_highs*.15*curtain;
+  if(u_conflict>.3){
+    float gl=step(.97,hsh(floor(uv.y*50.+u_time*12.)));
+    col=mix(col,vec3(.8,0.,.2),gl*u_conflict*.6);
   }
-  if(u_repair>0.3){
-    col+=vec3(0.1,0.3,0.6)*u_repair*0.15*curtain;
-  }
-  gl_FragColor=vec4(col,1.0);
-}
-`;
+  if(u_repair>.3) col+=vec3(.08,.2,.5)*u_repair*.2*curtain;
+  gl_FragColor=vec4(col,1.);
+}`;
 
-// ════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
+// FRACTURE SHADER (Voronoi cracks)
+// ═══════════════════════════════════════════
+const FRACTURE_FRAG=GLSL_NOISE+`
+precision highp float;
+${GLSL_UNIFORMS}
+
+vec2 hash2(vec2 p){p=vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3)));return fract(sin(p)*43758.5453);}
+
+void main(){
+  vec2 uv=gl_FragCoord.xy/u_resolution;
+  vec2 p=uv*mix(4.,8.,u_damage);
+  float t=u_time*.2;
+
+  // voronoi
+  vec2 n=floor(p),f=fract(p);
+  float md=8.,md2=8.;
+  for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){
+    vec2 g=vec2(float(i),float(j));
+    vec2 o=hash2(n+g);
+    o=.5+.5*sin(t+6.28*o+u_damage*2.);
+    vec2 r=g+o-f;
+    float d=dot(r,r);
+    if(d<md){md2=md;md=d;}
+    else if(d<md2){md2=d;}
+  }
+  float edge=md2-md;
+
+  float crackW=.01+u_damage*.18+u_pulse*.05;
+  float crack=smoothstep(crackW,0.,edge);
+  float glow=smoothstep(crackW*4.,0.,edge)*.4;
+
+  vec3 dark=vec3(.015,.015,.02);
+  vec3 light=mix(vec3(.08,.35,.75),vec3(.75,.15,.08),u_damage);
+  light*=1.+u_bass*.5;
+
+  vec3 col=mix(dark,light*(1.5+u_pulse),crack);
+  col+=light*glow*(1.+u_damage);
+
+  // interior noise texture
+  float interior=snoise(vec3(p*.5,t*.3))*.05;
+  col+=vec3(interior)*(1.-crack);
+
+  gl_FragColor=vec4(col,1.);
+}`;
+
+// ═══════════════════════════════════════════
 // FLOW PARTICLE SHADERS
-// ════════════════════════════════════════════════════════════════
-
-const FLOW_VERT = `
+// ═══════════════════════════════════════════
+const FLOW_VERT=`
 attribute float aRole;
 attribute float aLife;
-uniform float u_damage;
-uniform float u_time;
-varying float vRole;
-varying float vLife;
-varying float vDamage;
+attribute float aSize;
+uniform float u_damage,u_time,u_bass,u_pulse;
+varying float vRole,vLife,vDamage,vGlow;
 void main(){
-  vRole=aRole;
-  vLife=aLife;
-  vDamage=u_damage;
-  vec4 mv=modelViewMatrix*vec4(position,1.0);
-  float sz=mix(3.0,6.0,u_damage)*aLife;
-  gl_PointSize=sz*(300.0/-mv.z);
+  vRole=aRole;vLife=aLife;vDamage=u_damage;
+  vGlow=step(.95,aSize);
+  vec4 mv=modelViewMatrix*vec4(position,1.);
+  float sz=aSize*(mix(3.,7.,u_damage)+u_bass*3.+u_pulse*4.)*aLife;
+  gl_PointSize=sz*(350./-mv.z);
   gl_Position=projectionMatrix*mv;
-}
-`;
+}`;
 
-const FLOW_FRAG = `
+const FLOW_FRAG=`
 precision highp float;
-varying float vRole;
-varying float vLife;
-varying float vDamage;
+varying float vRole,vLife,vDamage,vGlow;
 void main(){
-  float d=length(gl_PointCoord-0.5)*2.0;
-  if(d>1.0) discard;
-  float alpha=smoothstep(1.0,0.3,d)*vLife*0.7;
-  vec3 c1=mix(vec3(0.1,0.4,0.9),vec3(0.9,0.3,0.1),vDamage);
-  vec3 c2=mix(vec3(0.9,0.6,0.1),vec3(0.4,0.0,0.1),vDamage);
+  float d=length(gl_PointCoord-.5)*2.;
+  if(d>1.) discard;
+  // soft gaussian glow
+  float alpha=exp(-d*d*3.)*vLife*.8;
+  alpha+=exp(-d*d*.8)*vLife*.2*vGlow;
+  vec3 c1=mix(vec3(.1,.35,.9),vec3(.9,.2,.08),vDamage);
+  vec3 c2=mix(vec3(.9,.55,.08),vec3(.35,.0,.08),vDamage);
   vec3 col=mix(c1,c2,vRole);
-  col+=vec3(0.2,0.8,0.4)*0.15*(1.0-vDamage);
+  col+=vec3(.15,.7,.35)*.2*(1.-vDamage)*(1.-d);
+  col*=1.+vGlow*.5;
   gl_FragColor=vec4(col*1.5,alpha);
-}
-`;
+}`;
 
-// ════════════════════════════════════════════════════════════════
-// POST-PROCESSING: COMPOSITE SHADER (vignette, chromatic aberration, grain)
-// ════════════════════════════════════════════════════════════════
-
-const COMPOSITE_SHADER = {
-  uniforms: {
-    tDiffuse: { value: null },
-    u_damage: { value: 0 },
-    u_time: { value: 0 },
-    u_shake: { value: 0 },
-    u_flash: { value: 0 }
+// ═══════════════════════════════════════════
+// COMPOSITE SHADER (feedback + CA + vignette + grain)
+// ═══════════════════════════════════════════
+const COMPOSITE_SHADER={
+  uniforms:{
+    tDiffuse:{value:null}, tFeedback:{value:null},
+    u_damage:{value:0}, u_time:{value:0}, u_shake:{value:0}, u_flash:{value:0}, u_fb:{value:.92}
   },
-  vertexShader: `varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
-  fragmentShader: `
+  vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+  fragmentShader:`
     precision highp float;
-    uniform sampler2D tDiffuse;
-    uniform float u_damage;
-    uniform float u_time;
-    uniform float u_shake;
-    uniform float u_flash;
+    uniform sampler2D tDiffuse,tFeedback;
+    uniform float u_damage,u_time,u_shake,u_flash,u_fb;
     varying vec2 vUv;
     float rand(vec2 co){return fract(sin(dot(co,vec2(12.9898,78.233)))*43758.5453);}
     void main(){
       vec2 uv=vUv;
-      uv+=(vec2(rand(uv+u_time),rand(uv+u_time+1.0))-0.5)*u_shake*0.01;
-      float ca=u_damage*0.004+u_shake*0.002;
+      // screen shake
+      uv+=(vec2(rand(uv+u_time),rand(uv+u_time+1.))-0.5)*u_shake*.012;
+      // feedback trail
+      vec2 fbUv=(uv-.5)*(1.+u_damage*.003)+.5;
+      vec4 prev=texture2D(tFeedback,fbUv);
+      float fb=u_fb+u_damage*.04;
+      // chromatic aberration
+      float ca=u_damage*.005+u_shake*.003;
       vec3 col;
-      col.r=texture2D(tDiffuse,uv+vec2(ca,0.0)).r;
+      col.r=texture2D(tDiffuse,uv+vec2(ca,ca*.5)).r;
       col.g=texture2D(tDiffuse,uv).g;
-      col.b=texture2D(tDiffuse,uv-vec2(ca,0.0)).b;
-      float vig=1.0-dot((uv-0.5)*1.2,(uv-0.5)*1.2);
-      vig=smoothstep(0.0,1.0,vig);
-      col*=mix(0.6,1.0,vig);
-      float grain=rand(uv+fract(u_time))*0.06;
-      col+=grain-0.03;
-      col=mix(col,vec3(1.0),u_flash);
-      gl_FragColor=vec4(col,1.0);
+      col.b=texture2D(tDiffuse,uv-vec2(ca,ca*.5)).b;
+      // blend with feedback
+      col=max(col,prev.rgb*fb);
+      // vignette
+      float vig=1.-dot((uv-.5)*1.3,(uv-.5)*1.3);
+      col*=mix(.5,1.,smoothstep(0.,1.,vig));
+      // film grain
+      float grain=(rand(uv+fract(u_time))-.5)*.07;
+      col+=grain;
+      // flash
+      col=mix(col,vec3(1.),u_flash);
+      gl_FragColor=vec4(max(col,vec3(0.)),1.);
     }
   `
 };
 
-// ════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
 // VISUAL ENGINE
-// ════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
+const PARTICLE_COUNT=3000;
 
-const PARTICLE_COUNT = 2000;
-
-class VisualEngine {
-  constructor(canvas) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+class VisualEngine{
+  constructor(canvas){
+    const W=window.innerWidth, H=window.innerHeight;
+    this.renderer=new THREE.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true});
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    this.renderer.setSize(W,H);
     this.renderer.setClearColor(0x0a0a0a);
-    this.renderer.autoClear = false;
+    this.renderer.autoClear=false;
 
-    this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
-    this.camera.position.z = 5;
+    this.scene=new THREE.Scene();
+    this.camera=new THREE.PerspectiveCamera(60,W/H,.1,100);
+    this.camera.position.z=5;
 
-    this.uniforms = {
-      u_time: { value: 0 },
-      u_damage: { value: 0 },
-      u_conflict: { value: 0 },
-      u_repair: { value: 0 },
-      u_bass: { value: 0 },
-      u_mids: { value: 0 },
-      u_highs: { value: 0 },
-      u_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
+    this.u={
+      u_time:{value:0},u_damage:{value:0},u_conflict:{value:0},u_repair:{value:0},
+      u_bass:{value:0},u_mids:{value:0},u_highs:{value:0},u_pulse:{value:0},
+      u_resolution:{value:new THREE.Vector2(W,H)}
     };
 
     this.setupOrganism();
     this.setupAurora();
+    this.setupFracture();
     this.setupFlow();
-    this.setupPostProcessing();
+    this.setupPostProcessing(W,H);
 
-    window.addEventListener('resize', () => this.onResize());
+    window.addEventListener('resize',()=>this.onResize());
   }
 
-  setupOrganism() {
-    const geo = new THREE.PlaneGeometry(2, 2);
-    const mat = new THREE.ShaderMaterial({
-      uniforms: this.uniforms,
-      vertexShader: `void main(){gl_Position=vec4(position.xy,0.0,1.0);}`,
-      fragmentShader: ORGANISM_FRAG,
-      depthTest: false, depthWrite: false, transparent: true,
-      blending: THREE.AdditiveBlending
-    });
-    this.organismMesh = new THREE.Mesh(geo, mat);
-    this.organismMesh.frustumCulled = false;
-    this.organismMesh.renderOrder = 0;
-    this.scene.add(this.organismMesh);
-  }
-
-  setupAurora() {
-    const geo = new THREE.PlaneGeometry(2, 2);
-    const mat = new THREE.ShaderMaterial({
-      uniforms: this.uniforms,
-      vertexShader: `void main(){gl_Position=vec4(position.xy,0.0,1.0);}`,
-      fragmentShader: AURORA_FRAG,
-      depthTest: false, depthWrite: false, transparent: true,
-      blending: THREE.AdditiveBlending
-    });
-    this.auroraMesh = new THREE.Mesh(geo, mat);
-    this.auroraMesh.frustumCulled = false;
-    this.auroraMesh.renderOrder = 1;
-    this.scene.add(this.auroraMesh);
-  }
-
-  setupFlow() {
-    const positions = new Float32Array(PARTICLE_COUNT * 3);
-    const roles = new Float32Array(PARTICLE_COUNT);
-    const lives = new Float32Array(PARTICLE_COUNT);
-
-    for (let i = 0; i < PARTICLE_COUNT; i++) {
-      positions[i*3]   = (Math.random()-0.5)*6;
-      positions[i*3+1] = (Math.random()-0.5)*4;
-      positions[i*3+2] = (Math.random()-0.5)*3;
-      roles[i] = i < PARTICLE_COUNT/2 ? 0 : 1;
-      lives[i] = Math.random();
-    }
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute('aRole', new THREE.BufferAttribute(roles, 1));
-    geo.setAttribute('aLife', new THREE.BufferAttribute(lives, 1));
-
-    const mat = new THREE.ShaderMaterial({
-      uniforms: { ...this.uniforms },
-      vertexShader: FLOW_VERT,
-      fragmentShader: FLOW_FRAG,
-      transparent: true,
-      depthTest: false, depthWrite: false,
-      blending: THREE.AdditiveBlending
-    });
-
-    this.flowPoints = new THREE.Points(geo, mat);
-    this.flowPoints.renderOrder = 2;
-    this.scene.add(this.flowPoints);
-    this.flowPositions = positions;
-    this.flowRoles = roles;
-    this.flowLives = lives;
-  }
-
-  setupPostProcessing() {
-    this.composer = new EffectComposer(this.renderer);
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
-
-    this.bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(window.innerWidth, window.innerHeight),
-      1.2, 0.4, 0.85
+  _makeQuad(frag,order){
+    const m=new THREE.Mesh(
+      new THREE.PlaneGeometry(2,2),
+      new THREE.ShaderMaterial({
+        uniforms:this.u,
+        vertexShader:`void main(){gl_Position=vec4(position.xy,0.,1.);}`,
+        fragmentShader:frag,
+        depthTest:false,depthWrite:false,transparent:true,
+        blending:THREE.AdditiveBlending
+      })
     );
+    m.frustumCulled=false;m.renderOrder=order;
+    this.scene.add(m);
+    return m;
+  }
+
+  setupOrganism(){this.organismMesh=this._makeQuad(ORGANISM_FRAG,0);}
+  setupAurora(){this.auroraMesh=this._makeQuad(AURORA_FRAG,1);}
+  setupFracture(){this.fractureMesh=this._makeQuad(FRACTURE_FRAG,2);}
+
+  setupFlow(){
+    const pos=new Float32Array(PARTICLE_COUNT*3);
+    const roles=new Float32Array(PARTICLE_COUNT);
+    const lives=new Float32Array(PARTICLE_COUNT);
+    const sizes=new Float32Array(PARTICLE_COUNT);
+    for(let i=0;i<PARTICLE_COUNT;i++){
+      pos[i*3]=(Math.random()-.5)*6;pos[i*3+1]=(Math.random()-.5)*4;pos[i*3+2]=(Math.random()-.5)*3;
+      roles[i]=i<PARTICLE_COUNT/2?0:1;
+      lives[i]=Math.random();
+      sizes[i]=Math.random()<.05?2+Math.random()*2:0.5+Math.random()*1.5; // 5% leader particles
+    }
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    geo.setAttribute('aRole',new THREE.BufferAttribute(roles,1));
+    geo.setAttribute('aLife',new THREE.BufferAttribute(lives,1));
+    geo.setAttribute('aSize',new THREE.BufferAttribute(sizes,1));
+    const mat=new THREE.ShaderMaterial({
+      uniforms:{...this.u},
+      vertexShader:FLOW_VERT,fragmentShader:FLOW_FRAG,
+      transparent:true,depthTest:false,depthWrite:false,
+      blending:THREE.AdditiveBlending
+    });
+    this.flowPoints=new THREE.Points(geo,mat);
+    this.flowPoints.renderOrder=3;
+    this.scene.add(this.flowPoints);
+    this.flowPos=pos;this.flowRoles=roles;this.flowLives=lives;this.flowSizes=sizes;
+    // velocity arrays for momentum
+    this.flowVel=new Float32Array(PARTICLE_COUNT*3);
+  }
+
+  setupPostProcessing(W,H){
+    // feedback render target
+    const pxW=Math.floor(W*Math.min(devicePixelRatio,2));
+    const pxH=Math.floor(H*Math.min(devicePixelRatio,2));
+    this.feedbackRT=new THREE.WebGLRenderTarget(pxW,pxH,{minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
+
+    this.composer=new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene,this.camera));
+    this.bloomPass=new UnrealBloomPass(new THREE.Vector2(W,H),1.2,.4,.85);
     this.composer.addPass(this.bloomPass);
-
-    this.compositePass = new ShaderPass(COMPOSITE_SHADER);
+    this.compositePass=new ShaderPass(COMPOSITE_SHADER);
+    this.compositePass.uniforms.tFeedback.value=this.feedbackRT.texture;
     this.composer.addPass(this.compositePass);
+
+    // copy scene for feedback: render a quad showing screen into feedbackRT
+    this.copyScene=new THREE.Scene();
+    this.copyCam=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+    this.copyMat=new THREE.MeshBasicMaterial({map:null});
+    this.copyQuad=new THREE.Mesh(new THREE.PlaneGeometry(2,2),this.copyMat);
+    this.copyScene.add(this.copyQuad);
+
+    // intermediate target to capture composer output
+    this.captureRT=new THREE.WebGLRenderTarget(pxW,pxH,{minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
   }
 
-  applyMode(mode) {
-    this.organismMesh.visible = mode.organism;
-    this.auroraMesh.visible = mode.aurora;
-    this.flowPoints.visible = mode.flow;
+  applyMode(mode){
+    this.organismMesh.visible=!!mode.organism;
+    this.auroraMesh.visible=!!mode.aurora;
+    this.fractureMesh.visible=!!mode.fracture;
+    this.flowPoints.visible=!!mode.flow;
   }
 
-  updateParticles(dt, damage, conflict) {
-    const pos = this.flowPositions;
-    const lives = this.flowLives;
-    const roles = this.flowRoles;
-    const time = this.uniforms.u_time.value;
-    const speed = 0.5 + damage * 1.5;
-    const chaos = damage * 2;
+  updateParticles(dt,damage,conflict,pulse){
+    const pos=this.flowPos,lives=this.flowLives,roles=this.flowRoles,vel=this.flowVel,sizes=this.flowSizes;
+    const time=this.u.u_time.value;
+    const speed=.6+damage*2;
+    const chaos=damage*2.5;
 
-    for (let i = 0; i < PARTICLE_COUNT; i++) {
-      let x = pos[i*3], y = pos[i*3+1], z = pos[i*3+2];
-      const role = roles[i];
+    for(let i=0;i<PARTICLE_COUNT;i++){
+      let x=pos[i*3],y=pos[i*3+1],z=pos[i*3+2];
+      const role=roles[i];
+      const attractX=role<.5?-1.3:1.3;
+      const attractY=role<.5?Math.sin(time*.3)*.6:Math.cos(time*.4)*.6;
 
-      const attractX = role < 0.5 ? -1.2 : 1.2;
-      const attractY = role < 0.5 ? Math.sin(time*0.3)*0.5 : Math.cos(time*0.4)*0.5;
+      const curl=curl3D(x+chaos,y+chaos,z,time*.15);
 
-      const curl = curlNoise3D(x+chaos, y+chaos, z, time*0.15);
-      const toAttrX = (attractX - x) * 0.01;
-      const toAttrY = (attractY - y) * 0.01;
+      // gravitational pull
+      const dx=attractX-x, dy=attractY-y;
+      const dist=Math.sqrt(dx*dx+dy*dy)+.1;
+      const grav=.15/(dist*dist);
+      const gravX=dx/dist*grav, gravY=dy/dist*grav;
 
-      if (conflict > 0.3) {
-        const push = role < 0.5 ? -1 : 1;
-        pos[i*3]   += curl.x*dt*speed + push*conflict*dt*0.5;
-        pos[i*3+1] += curl.y*dt*speed + (Math.random()-0.5)*conflict*dt;
+      // orbital velocity (perpendicular to gravity)
+      const orbX=-dy/dist*.02, orbY=dx/dist*.02;
+
+      if(conflict>.3){
+        const push=role<.5?-1:1;
+        vel[i*3]  +=curl.x*dt*speed+push*conflict*dt*.4;
+        vel[i*3+1]+=curl.y*dt*speed+(Math.random()-.5)*conflict*dt*.3;
       } else {
-        pos[i*3]   += curl.x*dt*speed + toAttrX;
-        pos[i*3+1] += curl.y*dt*speed + toAttrY;
+        vel[i*3]  +=curl.x*dt*speed+gravX*dt+orbX;
+        vel[i*3+1]+=curl.y*dt*speed+gravY*dt+orbY;
       }
-      pos[i*3+2] += curl.z*dt*speed*0.3;
+      vel[i*3+2]+=curl.z*dt*speed*.2;
 
-      lives[i] -= dt * (0.1 + damage*0.2);
-      if (lives[i] <= 0 || Math.abs(pos[i*3])>5 || Math.abs(pos[i*3+1])>4) {
-        const angle = Math.random()*Math.PI*2;
-        const r = 0.5 + Math.random()*0.5;
-        pos[i*3]   = (role<0.5?-1.2:1.2) + Math.cos(angle)*r;
-        pos[i*3+1] = Math.sin(angle)*r;
-        pos[i*3+2] = (Math.random()-0.5)*2;
-        lives[i] = 0.5 + Math.random()*0.5;
+      // pulse burst
+      if(pulse>.5){
+        vel[i*3]  +=(Math.random()-.5)*pulse*dt*2;
+        vel[i*3+1]+=(Math.random()-.5)*pulse*dt*2;
+      }
+
+      // damping
+      const damp=.96-damage*.02;
+      vel[i*3]*=damp;vel[i*3+1]*=damp;vel[i*3+2]*=damp;
+
+      pos[i*3]+=vel[i*3];pos[i*3+1]+=vel[i*3+1];pos[i*3+2]+=vel[i*3+2];
+
+      lives[i]-=dt*(.08+damage*.15);
+      if(lives[i]<=0||Math.abs(pos[i*3])>6||Math.abs(pos[i*3+1])>5){
+        const a=Math.random()*Math.PI*2,r=.3+Math.random()*.6;
+        pos[i*3]=(role<.5?-1.3:1.3)+Math.cos(a)*r;
+        pos[i*3+1]=Math.sin(a)*r;
+        pos[i*3+2]=(Math.random()-.5)*2;
+        vel[i*3]=vel[i*3+1]=vel[i*3+2]=0;
+        lives[i]=.5+Math.random()*.5;
       }
     }
-
-    this.flowPoints.geometry.attributes.position.needsUpdate = true;
-    this.flowPoints.geometry.attributes.aLife.needsUpdate = true;
+    this.flowPoints.geometry.attributes.position.needsUpdate=true;
+    this.flowPoints.geometry.attributes.aLife.needsUpdate=true;
   }
 
-  update(time, dt, damage, conflict, repair, bass, mids, highs, shake, flash) {
-    this.uniforms.u_time.value = time;
-    this.uniforms.u_damage.value = damage;
-    this.uniforms.u_conflict.value = conflict;
-    this.uniforms.u_repair.value = repair;
-    this.uniforms.u_bass.value = bass;
-    this.uniforms.u_mids.value = mids;
-    this.uniforms.u_highs.value = highs;
+  update(time,dt,damage,conflict,repair,bass,mids,highs,pulse,shake,flash){
+    this.u.u_time.value=time;
+    this.u.u_damage.value=damage;
+    this.u.u_conflict.value=conflict;
+    this.u.u_repair.value=repair;
+    this.u.u_bass.value=bass;
+    this.u.u_mids.value=mids;
+    this.u.u_highs.value=highs;
+    this.u.u_pulse.value=pulse;
 
-    this.flowPoints.material.uniforms.u_damage.value = damage;
-    this.flowPoints.material.uniforms.u_time.value = time;
+    // sync flow material uniforms
+    const fu=this.flowPoints.material.uniforms;
+    fu.u_damage.value=damage;fu.u_time.value=time;
+    fu.u_bass.value=bass;fu.u_pulse.value=pulse;
 
-    this.bloomPass.strength = 1.0 + damage * 0.8 + bass * 0.5;
-    this.compositePass.uniforms.u_damage.value = damage;
-    this.compositePass.uniforms.u_time.value = time;
-    this.compositePass.uniforms.u_shake.value = shake;
-    this.compositePass.uniforms.u_flash.value = flash;
+    this.bloomPass.strength=1.+damage*.8+bass*.6+pulse*.4;
+    this.bloomPass.radius=.4+damage*.3;
+    this.compositePass.uniforms.u_damage.value=damage;
+    this.compositePass.uniforms.u_time.value=time;
+    this.compositePass.uniforms.u_shake.value=shake;
+    this.compositePass.uniforms.u_flash.value=flash;
+    this.compositePass.uniforms.u_fb.value=.9+damage*.04;
 
-    if (this.flowPoints.visible) {
-      this.updateParticles(dt, damage, conflict);
-    }
+    if(this.flowPoints.visible) this.updateParticles(dt,damage,conflict,pulse);
   }
 
-  render() {
+  render(){
     this.renderer.clear();
+    // render through composer to captureRT first
+    this.composer.renderToScreen=false;
+    this.composer.render();
+    // copy composer output to feedbackRT for next frame
+    this.copyMat.map=this.composer.writeBuffer.texture;
+    this.renderer.setRenderTarget(this.feedbackRT);
+    this.renderer.render(this.copyScene,this.copyCam);
+    // now render to screen
+    this.composer.renderToScreen=true;
+    this.renderer.setRenderTarget(null);
     this.composer.render();
   }
 
-  onResize() {
-    const w = window.innerWidth, h = window.innerHeight;
-    this.camera.aspect = w/h;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(w, h);
-    this.composer.setSize(w, h);
-    this.uniforms.u_resolution.value.set(w, h);
+  onResize(){
+    const W=window.innerWidth,H=window.innerHeight;
+    const pxW=Math.floor(W*Math.min(devicePixelRatio,2)),pxH=Math.floor(H*Math.min(devicePixelRatio,2));
+    this.camera.aspect=W/H;this.camera.updateProjectionMatrix();
+    this.renderer.setSize(W,H);this.composer.setSize(W,H);
+    this.u.u_resolution.value.set(W,H);
+    this.feedbackRT.setSize(pxW,pxH);this.captureRT.setSize(pxW,pxH);
   }
-
-  get canvas() { return this.renderer.domElement; }
+  get canvas(){return this.renderer.domElement;}
 }
 
-// ════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
 // MUSIC ENGINE
-// ════════════════════════════════════════════════════════════════
-
-const CHORD_PROGRESSIONS = {
-  pure:     [['C4','E4','G4'],['F4','A4','C5'],['G4','B4','D5'],['A3','C4','E4']],
-  uneasy:   [['C4','Eb4','G4'],['F4','Ab4','C5'],['G4','Bb4','D5'],['Ab3','C4','Eb4']],
-  dark:     [['C4','Eb4','Gb4'],['Db4','F4','Ab4'],['Eb4','Gb4','Bb4'],['B3','D4','F4']],
+// ═══════════════════════════════════════════
+const CHORDS={
+  pure:[['C4','E4','G4'],['F4','A4','C5'],['G4','B4','D5'],['A3','C4','E4']],
+  uneasy:[['C4','Eb4','G4'],['F4','Ab4','C5'],['G4','Bb4','D5'],['Ab3','C4','Eb4']],
+  dark:[['C4','Eb4','Gb4'],['Db4','F4','Ab4'],['Eb4','Gb4','Bb4'],['B3','D4','F4']],
   shattered:[['C4','E4','Bb4'],['F#4','A4','D5'],['Eb4','G4','Db5'],['B3','F4','Ab4']]
 };
-const MELODY_SHAPES = {
-  lyrical:[0,2,4,7,4,2,0,-1], ascending:[0,2,3,5,7,8,10,12],
-  falling:[12,10,8,7,5,3,2,0], broken:[0,7,3,10,1,8,4,11],
-  tentative:[0,2,0,-1,0,4,2,0], anguish:[0,1,0,-1,-2,-1,3,0]
+const SHAPES={
+  lyrical:[0,2,4,7,4,2,0,-1],ascending:[0,2,3,5,7,8,10,12],
+  falling:[12,10,8,7,5,3,2,0],broken:[0,7,3,10,1,8,4,11],
+  tentative:[0,2,0,-1,0,4,2,0],anguish:[0,1,0,-1,-2,-1,3,0]
 };
 
-function midiToFreq(n){ return 440*Math.pow(2,(n-69)/12); }
-function noteToMidi(name){ return Tone.Frequency(name).toMidi(); }
+function m2f(n){return 440*Math.pow(2,(n-69)/12);}
+function n2m(s){return Tone.Frequency(s).toMidi();}
 
 function createMusicEngine(){
-  const reverb=new Tone.Reverb({decay:5,wet:0.35}).toDestination();
-  const delay=new Tone.FeedbackDelay({delayTime:'8n.',feedback:0.25,wet:0.15}).connect(reverb);
-  const filter=new Tone.Filter({frequency:4000,type:'lowpass',rolloff:-12}).connect(delay);
-  const distortion=new Tone.Distortion({distortion:0,wet:0}).connect(filter);
-  const chorus=new Tone.Chorus({frequency:1.5,delayTime:3.5,depth:0.5,wet:0.2}).connect(distortion);
+  const rev=new Tone.Reverb({decay:6,wet:.35}).toDestination();
+  const del=new Tone.FeedbackDelay({delayTime:'8n.',feedback:.25,wet:.15}).connect(rev);
+  const filt=new Tone.Filter({frequency:4000,type:'lowpass',rolloff:-12}).connect(del);
+  const dist=new Tone.Distortion({distortion:0,wet:0}).connect(filt);
+  const chor=new Tone.Chorus({frequency:1.5,delayTime:3.5,depth:.5,wet:.2}).connect(dist);
 
-  const pad=new Tone.PolySynth(Tone.Synth,{maxPolyphony:8,options:{oscillator:{type:'sine'},envelope:{attack:1.5,decay:0.8,sustain:0.6,release:2.5},volume:-20}}).connect(new Tone.Gain(0.6).connect(chorus));
-  const v1=new Tone.Synth({oscillator:{type:'triangle'},envelope:{attack:0.08,decay:0.3,sustain:0.4,release:0.8},volume:-14}).connect(new Tone.Gain(0.8).connect(chorus));
-  const v2=new Tone.Synth({oscillator:{type:'sine'},envelope:{attack:0.12,decay:0.4,sustain:0.35,release:1.0},volume:-14}).connect(new Tone.Gain(0.8).connect(chorus));
-  const ghost=new Tone.Synth({oscillator:{type:'fatsawtooth',spread:20},envelope:{attack:0.02,decay:0.15,sustain:0.1,release:0.3},volume:-28}).connect(distortion);
-  const noise=new Tone.NoiseSynth({noise:{type:'brown'},envelope:{attack:0.005,decay:0.08,sustain:0,release:0.15},volume:-32}).connect(reverb);
-  const bass=new Tone.Synth({oscillator:{type:'sine'},envelope:{attack:0.4,decay:0.6,sustain:0.5,release:1.5},volume:-22}).connect(filter);
+  const padG=new Tone.Gain(.55).connect(chor);
+  const pad=new Tone.PolySynth(Tone.Synth,{maxPolyphony:8,options:{oscillator:{type:'sine'},envelope:{attack:1.8,decay:.8,sustain:.6,release:3},volume:-20}}).connect(padG);
+  const v1=new Tone.Synth({oscillator:{type:'triangle'},envelope:{attack:.08,decay:.3,sustain:.4,release:.8},volume:-14}).connect(new Tone.Gain(.8).connect(chor));
+  const v2=new Tone.Synth({oscillator:{type:'sine'},envelope:{attack:.12,decay:.4,sustain:.35,release:1},volume:-14}).connect(new Tone.Gain(.8).connect(chor));
+  const ghost=new Tone.Synth({oscillator:{type:'fatsawtooth',spread:20},envelope:{attack:.02,decay:.15,sustain:.1,release:.3},volume:-28}).connect(dist);
+  const noise=new Tone.NoiseSynth({noise:{type:'brown'},envelope:{attack:.005,decay:.08,sustain:0,release:.15},volume:-32}).connect(rev);
+  const bass=new Tone.Synth({oscillator:{type:'sine'},envelope:{attack:.4,decay:.6,sustain:.5,release:1.5},volume:-22}).connect(filt);
 
-  fftAnalyzer = new Tone.FFT(32);
+  // ambient drone
+  const droneG=new Tone.Gain(.3).connect(rev);
+  const drone1=new Tone.Synth({oscillator:{type:'sine'},envelope:{attack:4,decay:1,sustain:.9,release:5},volume:-26}).connect(droneG);
+  const drone2=new Tone.Synth({oscillator:{type:'sine'},envelope:{attack:4,decay:1,sustain:.9,release:5},volume:-28}).connect(droneG);
+
+  fftAnalyzer=new Tone.FFT(32);
   Tone.getDestination().connect(fftAnalyzer);
 
-  let damage=0, chordIdx=0, timers=[], isOn=false;
+  let damage=0,chordIdx=0,timers=[],isOn=false,droneActive=false;
 
-  function clearT(){ timers.forEach(t=>clearTimeout(t)); timers=[]; }
-  function getP(){ return damage<0.15?'pure':damage<0.4?'uneasy':damage<0.7?'dark':'shattered'; }
+  function clearT(){timers.forEach(t=>clearTimeout(t));timers=[];}
+  function getP(){return damage<.15?'pure':damage<.4?'uneasy':damage<.7?'dark':'shattered';}
   function getShape(e){
-    if(e.admission) return MELODY_SHAPES.anguish;
-    if(e.assault) return MELODY_SHAPES.broken;
-    if(e.infidelity) return MELODY_SHAPES.falling;
-    if(e.repair) return MELODY_SHAPES.tentative;
-    if(e.frank||e.sarah||e.eric) return MELODY_SHAPES.ascending;
-    return MELODY_SHAPES.lyrical;
+    if(e.admission) return SHAPES.anguish;
+    if(e.assault) return SHAPES.broken;
+    if(e.infidelity) return SHAPES.falling;
+    if(e.repair) return SHAPES.tentative;
+    if(e.frank||e.sarah||e.eric) return SHAPES.ascending;
+    return SHAPES.lyrical;
+  }
+
+  function updateDrone(chord){
+    if(!droneActive){drone1.triggerAttack(Tone.Frequency(chord[0]).toFrequency()/4);drone2.triggerAttack(Tone.Frequency(chord[0]).toFrequency()/4*1.5);droneActive=true;return;}
+    drone1.frequency.rampTo(Tone.Frequency(chord[0]).toFrequency()/4,3);
+    drone2.frequency.rampTo(Tone.Frequency(chord[0]).toFrequency()/4*1.5,3);
+    drone1.detune.rampTo(damage*60,2);
+    drone2.detune.rampTo(-damage*40,2);
   }
 
   function playPhrase(entry,density){
     if(!isOn) return;
     clearT();
-    const prog=CHORD_PROGRESSIONS[getP()];
-    const chord=prog[chordIdx%prog.length]; chordIdx++;
-    const root=noteToMidi(chord[0]);
+    sPulse=1; // trigger visual pulse
+    const prog=CHORDS[getP()];
+    const chord=prog[chordIdx%prog.length];chordIdx++;
+    const root=n2m(chord[0]);
     const shape=getShape(entry);
     const lead=entry.sender==='Role1'?v1:v2;
     const bg=entry.sender==='Role1'?v2:v1;
 
+    updateDrone(chord);
+
     pad.releaseAll();
     pad.triggerAttack(chord.map(n=>{
-      const cents=damage*(Math.random()-0.5)*30;
-      return Tone.Frequency(n).toFrequency()*Math.pow(2,cents/1200);
+      const c=damage*(Math.random()-.5)*35;
+      return Tone.Frequency(n).toFrequency()*Math.pow(2,c/1200);
     }));
     bass.triggerAttackRelease(Tone.Frequency(chord[0]).toFrequency()/2,2.5);
 
@@ -796,327 +700,255 @@ function createMusicEngine(){
     const count=Math.min(shape.length,4+Math.floor(Math.random()*5));
     for(let i=0;i<count;i++){
       const note=root+shape[i%shape.length]+(entry.sender==='Role1'?0:7);
-      const freq=midiToFreq(note)*Math.pow(2,damage*(Math.random()-0.5)*40/1200);
-      const dur=damage>0.7?0.15+Math.random()*0.1:damage>0.4?0.2+Math.random()*0.15:0.3+Math.random()*0.3;
-      const gap=Math.max(0.12,0.35-density*0.15+(Math.random()-0.5)*0.1);
-      timers.push(setTimeout(()=>{ if(isOn) lead.triggerAttackRelease(freq,dur); },time*1000));
-      if(damage>0.3&&Math.random()<damage*0.6){
-        const gf=midiToFreq(root+shape[(i+3)%shape.length]+(Math.random()>0.5?12:0))*Math.pow(2,(Math.random()-0.5)*80/1200);
-        timers.push(setTimeout(()=>{ if(isOn) ghost.triggerAttackRelease(gf,dur*0.4); },(time+dur*0.3)*1000));
+      const freq=m2f(note)*Math.pow(2,damage*(Math.random()-.5)*45/1200);
+      const dur=damage>.7?.12+Math.random()*.1:damage>.4?.2+Math.random()*.15:.3+Math.random()*.35;
+      const gap=Math.max(.1,.38-density*.15+(Math.random()-.5)*.1);
+      // velocity variation
+      const vel=.5+Math.random()*.5;
+      timers.push(setTimeout(()=>{if(isOn){lead.volume.value=-14-((1-vel)*8);lead.triggerAttackRelease(freq,dur);}},time*1000));
+      if(damage>.25&&Math.random()<damage*.6){
+        const gf=m2f(root+shape[(i+3)%shape.length]+(Math.random()>.5?12:0))*Math.pow(2,(Math.random()-.5)*80/1200);
+        timers.push(setTimeout(()=>{if(isOn) ghost.triggerAttackRelease(gf,dur*.4);},((time+dur*.3))*1000));
       }
       time+=dur+gap;
     }
-
-    if(entry.repair&&damage>0.1){
-      const pure=CHORD_PROGRESSIONS.pure[chordIdx%4];
-      timers.push(setTimeout(()=>{ if(isOn) bg.triggerAttackRelease(Tone.Frequency(pure[2]).toFrequency(),0.6); },(time+0.2)*1000));
-      timers.push(setTimeout(()=>{ if(isOn) bg.triggerAttackRelease(Tone.Frequency(pure[1]).toFrequency(),0.8); },(time+0.6)*1000));
+    if(entry.repair&&damage>.1){
+      const pure=CHORDS.pure[chordIdx%4];
+      timers.push(setTimeout(()=>{if(isOn) bg.triggerAttackRelease(Tone.Frequency(pure[2]).toFrequency(),.6);},(time+.2)*1000));
+      timers.push(setTimeout(()=>{if(isOn) bg.triggerAttackRelease(Tone.Frequency(pure[1]).toFrequency(),.8);},(time+.6)*1000));
     }
     if(entry.assault){
-      timers.push(setTimeout(()=>{ if(isOn){ noise.triggerAttackRelease('16n'); pad.releaseAll(); } },300));
-      timers.push(setTimeout(()=>{ if(isOn) bass.triggerAttackRelease(midiToFreq(root-24),2); },1200));
+      timers.push(setTimeout(()=>{if(isOn){noise.triggerAttackRelease('16n');pad.releaseAll();}},300));
+      timers.push(setTimeout(()=>{if(isOn) bass.triggerAttackRelease(m2f(root-24),2);},1200));
     }
     if(entry.admission){
-      timers.push(setTimeout(()=>{ if(isOn){ pad.releaseAll(); v1.triggerAttackRelease(midiToFreq(root+12),2); } },200));
+      timers.push(setTimeout(()=>{if(isOn){pad.releaseAll();v1.triggerAttackRelease(m2f(root+12),2.5);}},200));
     }
-    timers.push(setTimeout(()=>pad.releaseAll(),(time+0.5)*1000));
+    timers.push(setTimeout(()=>pad.releaseAll(),(time+.5)*1000));
   }
 
   function updateDamage(index){
     let acc=0,heal=0;
     for(let i=0;i<=index;i++){
       const e=emailData[i];
-      acc+=e.infidelity*0.08+e.assault*0.12+(e.frank+e.sarah+e.eric)*0.03;
-      heal+=e.repair*0.04;
+      acc+=e.infidelity*.08+e.assault*.12+(e.frank+e.sarah+e.eric)*.03;
+      heal+=e.repair*.04;
     }
     damage=Math.min(1,Math.max(0,acc-heal));
     currentDamage=damage;
-    distortion.distortion=damage*0.6;
-    distortion.wet.rampTo(damage*0.5,0.5);
-    filter.frequency.rampTo(4000-damage*2800,0.5);
-    chorus.wet.rampTo(0.2+damage*0.3,0.3);
-    delay.feedback.rampTo(0.15+damage*0.25,0.5);
-    v1.oscillator.type=damage>0.5?'sawtooth':damage>0.25?'square':'triangle';
-    v2.oscillator.type=damage>0.5?'fatsawtooth':'sine';
-    v1.envelope.attack=Math.max(0.01,0.08-damage*0.06);
-    v1.envelope.release=Math.max(0.2,0.8-damage*0.5);
+    dist.distortion=damage*.6;dist.wet.rampTo(damage*.5,.5);
+    filt.frequency.rampTo(4000-damage*2800,.5);
+    chor.wet.rampTo(.2+damage*.3,.3);
+    del.feedback.rampTo(.15+damage*.3,.5);
+    v1.oscillator.type=damage>.5?'sawtooth':damage>.25?'square':'triangle';
+    v2.oscillator.type=damage>.5?'fatsawtooth':'sine';
+    v1.envelope.attack=Math.max(.01,.08-damage*.06);
+    v1.envelope.release=Math.max(.15,.8-damage*.5);
+    droneG.gain.rampTo(.3+damage*.15,.5);
   }
 
-  return {
-    update(entry,density,index){ updateDamage(index); playPhrase(entry,density); playSpeed=0.00018+density*0.0003+damage*0.0002; },
-    start(){ isOn=true; },
-    stop(){ isOn=false; clearT(); pad.releaseAll(); v1.triggerRelease(); v2.triggerRelease(); },
-    get damage(){ return damage; }
+  return{
+    update(entry,density,index){updateDamage(index);playPhrase(entry,density);playSpeed=.00018+density*.0003+damage*.0002;},
+    start(){isOn=true;},
+    stop(){isOn=false;clearT();pad.releaseAll();v1.triggerRelease();v2.triggerRelease();if(droneActive){drone1.triggerRelease();drone2.triggerRelease();droneActive=false;}},
+    get damage(){return damage;}
   };
 }
 
-// ════════════════════════════════════════════════════════════════
-// FFT HELPERS
-// ════════════════════════════════════════════════════════════════
-
+// ═══════════════════════════════════════════
+// FFT
+// ═══════════════════════════════════════════
 function getFFT(){
-  if(!fftAnalyzer) return {bass:0,mids:0,highs:0};
-  const vals=fftAnalyzer.getValue();
-  const norm=v=>Math.max(0,Math.min(1,(v+100)/70));
+  if(!fftAnalyzer) return{bass:0,mids:0,highs:0};
+  const v=fftAnalyzer.getValue();
+  const norm=x=>Math.max(0,Math.min(1,(x+100)/70));
   let b=0,m=0,h=0;
-  for(let i=0;i<4;i++) b+=norm(vals[i]);
-  for(let i=4;i<16;i++) m+=norm(vals[i]);
-  for(let i=16;i<32;i++) h+=norm(vals[i]);
-  return { bass:b/4, mids:m/12, highs:h/16 };
+  for(let i=0;i<4;i++) b+=norm(v[i]);
+  for(let i=4;i<16;i++) m+=norm(v[i]);
+  for(let i=16;i<32;i++) h+=norm(v[i]);
+  return{bass:b/4,mids:m/12,highs:h/16};
 }
 
-// ════════════════════════════════════════════════════════════════
-// PSEUDONYM / CSV / TIMELINE (same as before)
-// ════════════════════════════════════════════════════════════════
-
-function pseudonym(roleId){ return ROLE_IDS.includes(roleId)?currentSet[roleId]:roleId; }
-
+// ═══════════════════════════════════════════
+// PSEUDONYM / CSV / TIMELINE
+// ═══════════════════════════════════════════
+function pseudonym(r){return ROLE_IDS.includes(r)?currentSet[r]:r;}
 function displayPseudonyms(){
   document.getElementById('set-label').textContent=currentSet.name;
-  document.getElementById('pseudonym-list').innerHTML=
-    `${currentSet.Role1} / ${currentSet.Role2}<br>${currentSet.Role3} / ${currentSet.Role4} / ${currentSet.Role5}<br><span style="opacity:0.5">${currentSet.Location}</span>`;
+  document.getElementById('pseudonym-list').innerHTML=`${currentSet.Role1} / ${currentSet.Role2}<br>${currentSet.Role3} / ${currentSet.Role4} / ${currentSet.Role5}<br><span style="opacity:0.5">${currentSet.Location}</span>`;
 }
-
 function loadCSV(){
-  return new Promise((resolve,reject)=>{
+  return new Promise((res,rej)=>{
     Papa.parse('emails_analysis.csv',{
-      download:true, header:true, dynamicTyping:true, skipEmptyLines:true,
-      complete:(r)=>{
+      download:true,header:true,dynamicTyping:true,skipEmptyLines:true,
+      complete:r=>{
         emailData=r.data.filter(r=>r.Date).map(r=>({
-          date:new Date(r.Date), dateStr:r.Date, sender:r.Sender||'',
-          infidelity:r.Infidelity_Fallout_Flag||0, assault:r.Mentions_Assault_Related||0,
-          frank:r.Mentions_Role3||0, sarah:r.Mentions_Role4||0, eric:r.Mentions_Role5||0,
-          repair:r.Repair_Attempt||0, admission:r.Specific_Admission||0, intensity:r.Intensity||0
+          date:new Date(r.Date),dateStr:r.Date,sender:r.Sender||'',
+          infidelity:r.Infidelity_Fallout_Flag||0,assault:r.Mentions_Assault_Related||0,
+          frank:r.Mentions_Role3||0,sarah:r.Mentions_Role4||0,eric:r.Mentions_Role5||0,
+          repair:r.Repair_Attempt||0,admission:r.Specific_Admission||0,intensity:r.Intensity||0
         }));
-        emailData.sort((a,b)=>a.date-b.date);
-        resolve();
-      }, error:reject
+        emailData.sort((a,b)=>a.date-b.date);res();
+      },error:rej
     });
   });
 }
-
 function setupTimeline(){
-  const markers=document.getElementById('event-markers');
-  markers.innerHTML='';
+  const mk=document.getElementById('event-markers');mk.innerHTML='';
   if(!emailData.length) return;
-  const min=emailData[0].date.getTime(), max=emailData[emailData.length-1].date.getTime(), range=max-min||1;
+  const min=emailData[0].date.getTime(),max=emailData[emailData.length-1].date.getTime(),range=max-min||1;
   emailData.forEach((e,i)=>{
     const pct=((e.date.getTime()-min)/range)*100;
     const m=document.createElement('div');
     m.className='event-marker'+(e.infidelity||e.assault?' conflict':e.repair?' repair':e.admission?' admission':' neutral');
     m.style.left=pct+'%';
-    m.addEventListener('mouseenter',ev=>showTooltip(ev,e));
-    m.addEventListener('mouseleave',hideTooltip);
-    markers.appendChild(m);
+    m.addEventListener('mouseenter',ev=>showTip(ev,e));
+    m.addEventListener('mouseleave',()=>document.getElementById('tooltip').style.display='none');
+    mk.appendChild(m);
   });
-  const track=document.getElementById('timeline-track');
-  let dragging=false;
-  track.addEventListener('mousedown',e=>{ dragging=true; scrubTo(e,track); });
-  window.addEventListener('mousemove',e=>{ if(dragging) scrubTo(e,track); });
-  window.addEventListener('mouseup',()=>{ dragging=false; });
+  const track=document.getElementById('timeline-track');let drag=false;
+  track.addEventListener('mousedown',e=>{drag=true;scrub(e,track);});
+  window.addEventListener('mousemove',e=>{if(drag) scrub(e,track);});
+  window.addEventListener('mouseup',()=>{drag=false;});
 }
-
-function scrubTo(e,track){
-  const rect=track.getBoundingClientRect();
-  playProgress=Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width));
-  updateTimelineUI();
-}
-
-function showTooltip(ev,entry){
-  const tip=document.getElementById('tooltip');
-  const flags=[];
-  if(entry.infidelity) flags.push('INFIDELITY FALLOUT');
-  if(entry.assault) flags.push('ASSAULT RELATED');
+function scrub(e,t){const r=t.getBoundingClientRect();playProgress=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));updateTL();}
+function showTip(ev,entry){
+  const tip=document.getElementById('tooltip'),flags=[];
+  if(entry.infidelity) flags.push('INFIDELITY FALLOUT');if(entry.assault) flags.push('ASSAULT RELATED');
   if(entry.frank) flags.push('MENTIONS '+currentSet.Role3.toUpperCase());
   if(entry.sarah) flags.push('MENTIONS '+currentSet.Role4.toUpperCase());
   if(entry.eric) flags.push('MENTIONS '+currentSet.Role5.toUpperCase());
-  if(entry.repair) flags.push('REPAIR ATTEMPT');
-  if(entry.admission) flags.push('SPECIFIC ADMISSION');
+  if(entry.repair) flags.push('REPAIR ATTEMPT');if(entry.admission) flags.push('SPECIFIC ADMISSION');
   tip.innerHTML=`<strong>${entry.dateStr}</strong><br>FROM: ${pseudonym(entry.sender)}<br>${flags.length?flags.join(' | '):'BASELINE'}<br>INTENSITY: ${(entry.intensity*100).toFixed(0)}%`;
-  tip.style.left=(ev.clientX+15)+'px';
-  tip.style.top=(ev.clientY-60)+'px';
-  tip.style.display='block';
+  tip.style.left=(ev.clientX+15)+'px';tip.style.top=(ev.clientY-60)+'px';tip.style.display='block';
 }
-function hideTooltip(){ document.getElementById('tooltip').style.display='none'; }
-
-function updateTimelineUI(){
+function updateTL(){
   document.getElementById('timeline-progress').style.width=(playProgress*100)+'%';
   document.getElementById('timeline-playhead').style.left=(playProgress*100)+'%';
   if(!emailData.length) return;
-  const min=emailData[0].date.getTime(), max=emailData[emailData.length-1].date.getTime();
-  const d=new Date(min+(max-min)*playProgress);
-  document.getElementById('timeline-date').textContent=d.toISOString().split('T')[0]+' | '+currentSet.Location;
+  const min=emailData[0].date.getTime(),max=emailData[emailData.length-1].date.getTime();
+  document.getElementById('timeline-date').textContent=new Date(min+(max-min)*playProgress).toISOString().split('T')[0]+' | '+currentSet.Location;
 }
-
-function getCurrentEntry(){
+function getCurrent(){
   if(!emailData.length) return null;
-  const min=emailData[0].date.getTime(), max=emailData[emailData.length-1].date.getTime();
-  const cur=min+(max-min)*playProgress;
-  let closest=0, best=Infinity;
-  for(let i=0;i<emailData.length;i++){
-    const d=Math.abs(emailData[i].date.getTime()-cur);
-    if(d<best){ best=d; closest=i; }
-  }
-  return { entry:emailData[closest], index:closest };
+  const min=emailData[0].date.getTime(),max=emailData[emailData.length-1].date.getTime(),cur=min+(max-min)*playProgress;
+  let c=0,best=Infinity;
+  for(let i=0;i<emailData.length;i++){const d=Math.abs(emailData[i].date.getTime()-cur);if(d<best){best=d;c=i;}}
+  return{entry:emailData[c],index:c};
 }
-
-function getLocalDensity(index,w=3){
-  let f=0;
-  for(let i=Math.max(0,index-w);i<=Math.min(emailData.length-1,index+w);i++){
-    const e=emailData[i]; f+=e.infidelity+e.assault+e.frank+e.sarah+e.eric;
-  }
+function getDensity(idx,w=3){
+  let f=0;for(let i=Math.max(0,idx-w);i<=Math.min(emailData.length-1,idx+w);i++){const e=emailData[i];f+=e.infidelity+e.assault+e.frank+e.sarah+e.eric;}
   return f/(w*2+1);
 }
 
-// ════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
 // RENDER LOOP
-// ════════════════════════════════════════════════════════════════
-
-let visualEngine;
-let lastTime = 0;
+// ═══════════════════════════════════════════
+let visualEngine, lastTime=0;
 
 function render(timestamp){
   requestAnimationFrame(render);
   if(timestamp<freezeFrameUntil) return;
+  const dt=Math.min((timestamp-(lastTime||timestamp))/1000,.1);
+  lastTime=timestamp;
+  const t=timestamp/1000;
 
-  const dt = Math.min((timestamp-(lastTime||timestamp))/1000, 0.1);
-  lastTime = timestamp;
-  const timeSec = timestamp/1000;
+  if(playing){playProgress+=playSpeed;if(playProgress>=1){playProgress=1;playing=false;}updateTL();}
 
-  if(playing){
-    playProgress+=playSpeed;
-    if(playProgress>=1){ playProgress=1; playing=false; }
-    updateTimelineUI();
-  }
-
-  const result=getCurrentEntry();
-  if(!result) return;
-  const {entry,index}=result;
-  const density=getLocalDensity(index);
+  const result=getCurrent();if(!result) return;
+  const{entry,index}=result;
+  const density=getDensity(index);
 
   if(index!==prevEventIndex){
     prevEventIndex=index;
     document.getElementById('current-sender').textContent=pseudonym(entry.sender);
     if(audioInitialized&&musicEngine) musicEngine.update(entry,density,index);
-    if(entry.admission){ flashOpacity=1; freezeFrameUntil=timestamp+800; }
-    if(entry.infidelity||entry.assault){ shakeAmount=8+entry.intensity*12; desaturation=0.6; }
+    if(entry.admission){flashOpacity=1;freezeFrameUntil=timestamp+800;}
+    if(entry.infidelity||entry.assault){shakeAmount=8+entry.intensity*12;}
   }
 
-  shakeAmount*=0.92;
-  desaturation*=0.95;
-  flashOpacity*=0.85;
-
+  // smooth interpolation
+  const tConflict=(entry.infidelity||entry.assault)?Math.max(entry.intensity,.5):0;
+  const tRepair=entry.repair?1:0;
   const fft=getFFT();
-  const conflict=(entry.infidelity||entry.assault)?Math.max(entry.intensity,0.5):0;
-  const repair=entry.repair?1:0;
+  sDamage+=(currentDamage-sDamage)*dt*2;
+  sConflict+=(tConflict-sConflict)*dt*4;
+  sRepair+=(tRepair-sRepair)*dt*3;
+  sBass+=(fft.bass-sBass)*dt*8;
+  sMids+=(fft.mids-sMids)*dt*8;
+  sHighs+=(fft.highs-sHighs)*dt*8;
+  sPulse*=Math.pow(.15,dt);
+  shakeAmount*=Math.pow(.08,dt);
+  flashOpacity*=Math.pow(.1,dt);
+
+  document.getElementById('damage-fill').style.width=(sDamage*100)+'%';
 
   visualEngine.applyMode(VISUAL_MODES[visualModeIndex]);
-  visualEngine.update(timeSec, dt, currentDamage, conflict, repair, fft.bass, fft.mids, fft.highs, shakeAmount, flashOpacity);
+  visualEngine.update(t,dt,sDamage,sConflict,sRepair,sBass,sMids,sHighs,sPulse,shakeAmount,flashOpacity);
   visualEngine.render();
 
   document.getElementById('flash-overlay').style.opacity=flashOpacity;
   document.getElementById('play-state').textContent=playing?'PLAYING':'PAUSED';
 }
 
-// ════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
 // INTERACTION
-// ════════════════════════════════════════════════════════════════
-
+// ═══════════════════════════════════════════
 function setupInteraction(){
-  document.addEventListener('click',e=>{
-    if(e.target.closest('#timeline-container')||e.target.closest('button')) return;
-    if(!audioStarted){ initAudio(); audioStarted=true; }
+  const toggle=()=>{
+    if(!audioStarted){initAudio();audioStarted=true;}
     playing=!playing;
-    if(musicEngine){ playing?musicEngine.start():musicEngine.stop(); }
-  });
-
+    if(musicEngine){playing?musicEngine.start():musicEngine.stop();}
+  };
+  document.addEventListener('click',e=>{if(!e.target.closest('#timeline-container')&&!e.target.closest('button')) toggle();});
   document.addEventListener('keydown',e=>{
-    if(e.key==='r'||e.key==='R'){
-      const ci=PSEUDONYM_SETS.indexOf(currentSet);
-      currentSet=PSEUDONYM_SETS[(ci+1)%PSEUDONYM_SETS.length];
-      displayPseudonyms(); prevEventIndex=-1;
-    }
-    if(e.key==='s'||e.key==='S'){
-      visualModeIndex=(visualModeIndex+1)%VISUAL_MODES.length;
-      document.getElementById('mode-display').textContent=VISUAL_MODES[visualModeIndex].name;
-    }
-    if(e.key===' '){
-      e.preventDefault();
-      if(!audioStarted){ initAudio(); audioStarted=true; }
-      playing=!playing;
-      if(musicEngine){ playing?musicEngine.start():musicEngine.stop(); }
-    }
+    if(e.key==='r'||e.key==='R'){currentSet=PSEUDONYM_SETS[(PSEUDONYM_SETS.indexOf(currentSet)+1)%3];displayPseudonyms();prevEventIndex=-1;}
+    if(e.key==='s'||e.key==='S'){visualModeIndex=(visualModeIndex+1)%VISUAL_MODES.length;document.getElementById('mode-display').textContent=VISUAL_MODES[visualModeIndex].name;}
+    if(e.key===' '){e.preventDefault();toggle();}
   });
-
   document.getElementById('screenshot-btn').addEventListener('click',()=>{
     visualEngine.render();
-    const link=document.createElement('a');
-    link.download=`digital_ghosts_${Date.now()}.png`;
-    link.href=visualEngine.canvas.toDataURL('image/png');
-    link.click();
+    const a=document.createElement('a');a.download=`digital_ghosts_${Date.now()}.png`;a.href=visualEngine.canvas.toDataURL('image/png');a.click();
   });
-
-  let mediaRecorder=null, recordedChunks=[];
+  let mr=null,rc=[];
   document.getElementById('record-btn').addEventListener('click',async()=>{
     const btn=document.getElementById('record-btn');
-    if(mediaRecorder&&mediaRecorder.state==='recording'){
-      mediaRecorder.stop(); btn.classList.remove('recording'); btn.textContent='REC'; return;
-    }
+    if(mr&&mr.state==='recording'){mr.stop();btn.classList.remove('recording');btn.textContent='REC';return;}
     try{
-      const stream=visualEngine.canvas.captureStream(30);
-      recordedChunks=[];
-      mediaRecorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9'});
-      mediaRecorder.ondataavailable=e=>{ if(e.data.size>0) recordedChunks.push(e.data); };
-      mediaRecorder.onstop=()=>{
-        const blob=new Blob(recordedChunks,{type:'video/webm'});
-        const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-        a.download=`digital_ghosts_${Date.now()}.webm`; a.click();
-      };
-      mediaRecorder.start(); btn.classList.add('recording'); btn.textContent='STOP';
-      setTimeout(()=>{ if(mediaRecorder&&mediaRecorder.state==='recording'){ mediaRecorder.stop(); btn.classList.remove('recording'); btn.textContent='REC'; } },60000);
-    }catch(err){ console.error('Recording failed:',err); }
+      rc=[];const s=visualEngine.canvas.captureStream(30);
+      mr=new MediaRecorder(s,{mimeType:'video/webm;codecs=vp9'});
+      mr.ondataavailable=e=>{if(e.data.size>0)rc.push(e.data);};
+      mr.onstop=()=>{const b=new Blob(rc,{type:'video/webm'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`digital_ghosts_${Date.now()}.webm`;a.click();};
+      mr.start();btn.classList.add('recording');btn.textContent='STOP';
+      setTimeout(()=>{if(mr&&mr.state==='recording'){mr.stop();btn.classList.remove('recording');btn.textContent='REC';}},60000);
+    }catch(e){console.error('Rec fail:',e);}
   });
 }
-
 async function initAudio(){
   if(audioInitialized) return;
-  await Tone.start();
-  Tone.Transport.bpm.value=90;
-  musicEngine=createMusicEngine();
-  musicEngine.start();
-  audioInitialized=true;
+  await Tone.start();Tone.Transport.bpm.value=90;
+  musicEngine=createMusicEngine();musicEngine.start();audioInitialized=true;
 }
 
-// ════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
 // INIT
-// ════════════════════════════════════════════════════════════════
-
+// ═══════════════════════════════════════════
 async function init(){
   displayPseudonyms();
   document.getElementById('mode-display').textContent=VISUAL_MODES[visualModeIndex].name;
-
-  try{ await loadCSV(); }
-  catch(err){
-    console.error('CSV load failed:',err);
-    document.getElementById('loading-text').textContent='CSV NOT FOUND';
-    document.getElementById('loading-text').style.color='#ff0040';
-    return;
+  try{await loadCSV();}catch(e){
+    console.error(e);document.getElementById('loading-text').textContent='CSV NOT FOUND';
+    document.getElementById('loading-text').style.color='#ff0040';return;
   }
-
-  visualEngine = new VisualEngine(document.getElementById('main-canvas'));
+  visualEngine=new VisualEngine(document.getElementById('main-canvas'));
   visualEngine.applyMode(VISUAL_MODES[visualModeIndex]);
-
-  setupTimeline();
-  updateTimelineUI();
-  setupInteraction();
-
+  setupTimeline();updateTL();setupInteraction();
   setTimeout(()=>{
     document.getElementById('loading-screen').classList.add('fade-out');
     setTimeout(()=>document.getElementById('loading-screen').style.display='none',800);
     requestAnimationFrame(render);
   },2000);
 }
-
 init();
 </script>
 </body>
