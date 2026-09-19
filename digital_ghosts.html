@@ -448,9 +448,9 @@ const COMPOSITE={
 
 class Visual{
   constructor(canvas){
-    const W=innerWidth,H=innerHeight;
+    const W=innerWidth,H=innerHeight,dpr=Math.min(devicePixelRatio,2);
     this.r=new THREE.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true});
-    this.r.setPixelRatio(Math.min(devicePixelRatio,2));
+    this.r.setPixelRatio(dpr);
     this.r.setSize(W,H);this.r.setClearColor(0x0a0a0a);this.r.autoClear=false;
     this.scene=new THREE.Scene();
     this.cam=new THREE.PerspectiveCamera(60,W/H,.1,100);
@@ -458,7 +458,8 @@ class Visual{
     this.u={
       u_time:{value:0},u_damage:{value:0},u_conflict:{value:0},u_repair:{value:0},
       u_bass:{value:0},u_mids:{value:0},u_highs:{value:0},u_pulse:{value:0},
-      u_res:{value:new THREE.Vector2(W,H)}
+      // physical (drawing-buffer) pixels — matches gl_FragCoord, not CSS size
+      u_res:{value:new THREE.Vector2(W*dpr,H*dpr)}
     };
     this._quad(ORGANISM_FRAG,0,'organism');
     this._quad(AURORA_FRAG,1,'aurora');
@@ -582,7 +583,7 @@ class Visual{
     const pxW=Math.floor(W*Math.min(devicePixelRatio,2)),pxH=Math.floor(H*Math.min(devicePixelRatio,2));
     this.cam.aspect=W/H;this.cam.updateProjectionMatrix();
     this.r.setSize(W,H);this.comp.setSize(W,H);
-    this.u.u_res.value.set(W,H);
+    this.u.u_res.value.set(pxW,pxH);
     // recreate feedback texture at new size
     this.fbTex.dispose();
     this.fbTex=new THREE.FramebufferTexture(pxW,pxH);
@@ -981,8 +982,15 @@ function setupInteraction(){
     const btn=$('rec');
     if(mr&&mr.state==='recording'){mr.stop();btn.classList.remove('on');btn.textContent='REC';return;}
     try{
-      rc=[];const s=visual.canvas.captureStream(30);
-      mr=new MediaRecorder(s,{mimeType:'video/webm;codecs=vp9'});
+      rc=[];
+      const videoStream=visual.canvas.captureStream(30);
+      let stream=videoStream;
+      if(S.audioReady){
+        const audioDest=Tone.getContext().rawContext.createMediaStreamDestination();
+        Tone.getDestination().connect(audioDest);
+        stream=new MediaStream([...videoStream.getVideoTracks(),...audioDest.stream.getAudioTracks()]);
+      }
+      mr=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9'});
       mr.ondataavailable=e=>{if(e.data.size>0)rc.push(e.data);};
       mr.onstop=()=>{
         const b=new Blob(rc,{type:'video/webm'}),a=document.createElement('a');
