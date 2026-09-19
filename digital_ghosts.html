@@ -261,7 +261,7 @@ function newChannel(ids){
     shake:0,flash:0,freezeUntil:0,
     annotateMode:false,annotations:{},
     playElapsed:0,midiLog:[],captureMidi:false,
-    compareMode:false,
+    compareMode:false,epilogueFired:false,
     _drag:null,_scrub:null
   };
 }
@@ -462,6 +462,38 @@ void main(){
   gl_FragColor=vec4(col*1.5,a*u_opFlow);
 }`;
 
+const MANDALA_FRAG=`
+precision highp float;
+uniform float u_time,u_opMandala,u_breath,u_pulse;
+uniform vec2 u_res;
+#define PHI 1.6180339887
+#define TAU 6.28318530718
+float ring(float r,float radius,float w){return smoothstep(w,0.,abs(r-radius));}
+void main(){
+  vec2 uv=(gl_FragCoord.xy-.5*u_res)/min(u_res.x,u_res.y);
+  float r=length(uv);
+  float a=atan(uv.y,uv.x);
+  float rot=u_time*.045;
+  float breathe=.92+.08*u_breath;
+  vec3 col=vec3(0.);
+  float radius=.055;
+  for(int i=0;i<7;i++){
+    float rr=radius*breathe;
+    col+=ring(r,rr,.0035+u_pulse*.002)*vec3(.25,.85,.55)*(1.-float(i)/7.);
+    radius*=PHI*.55;
+  }
+  float petals=12.;
+  float pattern=cos(a*petals+rot)*.5+.5;
+  float petalRing=ring(r,.34+.04*sin(u_time*.12),.14)*pattern;
+  col+=petalRing*vec3(.55,.4,.9)*.28;
+  float petals2=7.;
+  float pattern2=cos(a*petals2-rot*1.4)*.5+.5;
+  float petalRing2=ring(r,.62+.05*cos(u_time*.09),.18)*pattern2;
+  col+=petalRing2*vec3(.9,.65,.3)*.16;
+  col+=vec3(1.,.95,.82)*smoothstep(.09,0.,r)*(.45+.4*u_breath);
+  gl_FragColor=vec4(col,u_opMandala);
+}`;
+
 const COMPOSITE={
   uniforms:{
     tDiffuse:{value:null},tFeedback:{value:null},
@@ -512,6 +544,7 @@ class Visual{
       u_time:{value:0},u_damage:{value:0},u_conflict:{value:0},u_repair:{value:0},
       u_bass:{value:0},u_mids:{value:0},u_highs:{value:0},u_pulse:{value:0},
       u_opOrganism:{value:0},u_opAurora:{value:0},u_opFracture:{value:0},u_opFlow:{value:0},
+      u_opMandala:{value:.1},u_breath:{value:0},
       u_res:{value:new THREE.Vector2(W*dpr,H*dpr)}
     };
     this.opTarget={organism:0,aurora:0,fracture:0,flow:0};
@@ -521,6 +554,8 @@ class Visual{
     this._quad(AURORA_FRAG,1,'aurora');
     this._quad(FRACTURE_FRAG,2,'fracture');
     this._flow();
+    this._quad(MANDALA_FRAG,4,'mandala');
+    this.mandala.visible=true;
     this._post(W,H);
     addEventListener('resize',()=>this.resize());
   }
@@ -648,6 +683,9 @@ class Visual{
     cu.u_damage.value=dmg;cu.u_time.value=t;cu.u_shake.value=shake;cu.u_flash.value=flash;
     cu.u_fb.value=.9+dmg*.04;
     if(this.flow.visible)this.updateParticles(dt,dmg,con,p);
+    const breath=Math.sin(t*(2*Math.PI)/(1.618*4))*.5+.5;
+    this.u.u_breath.value=breath;
+    this.u.u_opMandala.value=Math.max(.05,Math.min(1,.08+rep*.25+flash*.5-con*.04));
   }
   render(){
     const t0=performance.now();
@@ -707,6 +745,7 @@ function createMusic(ch,pan){
   const droneG=new Tone.Gain(.3).connect(rev);
   const dr1=new Tone.Synth({oscillator:{type:'sine'},envelope:{attack:4,decay:1,sustain:.9,release:5},volume:-26}).connect(droneG);
   const dr2=new Tone.Synth({oscillator:{type:'sine'},envelope:{attack:4,decay:1,sustain:.9,release:5},volume:-28}).connect(droneG);
+  const bell=new Tone.Synth({oscillator:{type:'sine'},envelope:{attack:.01,decay:2.5,sustain:0,release:3},volume:-22}).connect(new Tone.Gain(.5).connect(rev));
 
   ch.fft=new Tone.FFT(32);
   out.connect(ch.fft);
@@ -762,12 +801,15 @@ function createMusic(ch,pan){
       const pu=CHORDS.pure[idx%4];
       tmrs.push(setTimeout(()=>{if(on)bg.triggerAttackRelease(Tone.Frequency(pu[2]).toFrequency(),.6);},(t+.2)*1000));
       tmrs.push(setTimeout(()=>{if(on)bg.triggerAttackRelease(Tone.Frequency(pu[1]).toFrequency(),.8);},(t+.6)*1000));
+      tmrs.push(setTimeout(()=>{if(on)bell.triggerAttackRelease(m2f(root+19),3);},(t+.3)*1000));
     }
     if(e.assault){
       tmrs.push(setTimeout(()=>{if(on){noise.triggerAttackRelease('16n');pad.releaseAll();}},300));
       tmrs.push(setTimeout(()=>{if(on)bass.triggerAttackRelease(m2f(root-24),2);},1200));
     }
-    if(e.admission)tmrs.push(setTimeout(()=>{if(on){pad.releaseAll();v1.triggerAttackRelease(m2f(root+12),2.5);}},200));
+    if(e.admission){
+      tmrs.push(setTimeout(()=>{if(on){pad.releaseAll();v1.triggerAttackRelease(m2f(root+12),2.5);bell.triggerAttackRelease(m2f(root+24),4);}},200));
+    }
     tmrs.push(setTimeout(()=>pad.releaseAll(),(t+.5)*1000));
   }
 
@@ -793,6 +835,25 @@ function createMusic(ch,pan){
     update(e,d,i){updateDmg(i);phrase(e,d);ch.speed=.00018+d*.0003+dmg*.0002;},
     start(){on=true;},
     stop(){on=false;clr();pad.releaseAll();v1.triggerRelease();v2.triggerRelease();if(drOn){dr1.triggerRelease();dr2.triggerRelease();drOn=false;}},
+    epilogue(){
+      clr();on=true;
+      pad.releaseAll();
+      const chord=CHORDS.pure[0];
+      const freqs=chord.map(n=>Tone.Frequency(n).toFrequency());
+      pad.triggerAttack(freqs);
+      bass.triggerAttackRelease(freqs[0]/2,6);
+      bell.triggerAttackRelease(freqs[2]*2,5);
+      v1.triggerAttackRelease(freqs[1]*2,4.5);
+      dist.wet.rampTo(0,1.5);dist.distortion=0;
+      filt.frequency.rampTo(6000,2);
+      chor.wet.rampTo(.15,1.5);
+      rev.wet.rampTo(.55,2);
+      del.feedback.rampTo(.12,1.5);
+      droneG.gain.rampTo(.22,2);
+      dr1.frequency.rampTo(freqs[0]/4,2);dr2.frequency.rampTo(freqs[0]/4*1.5,2);
+      dr1.detune.rampTo(0,2);dr2.detune.rampTo(0,2);
+      tmrs.push(setTimeout(()=>pad.releaseAll(),7000));
+    },
     get damage(){return dmg;}
   };
 }
@@ -968,7 +1029,7 @@ function setupTimelineDrag(ch){
   const dragState={active:false};
   ch._drag=dragState;
   const track=$(ch.ids.track);
-  ch._scrub=e=>{const r=track.getBoundingClientRect();ch.progress=clamp((e.clientX-r.left)/r.width,0,1);updateTL(ch);};
+  ch._scrub=e=>{const r=track.getBoundingClientRect();ch.progress=clamp((e.clientX-r.left)/r.width,0,1);if(ch.progress<1)ch.epilogueFired=false;updateTL(ch);};
   addEventListener('mousemove',e=>dragState.active&&ch._scrub(e));
   addEventListener('mouseup',()=>dragState.active=false);
 }
@@ -1093,7 +1154,7 @@ function setupDrop(){
     const ch=targetB?S2:S;
     try{
       await loadCSV(file,ch);
-      ch.progress=0;ch.prevIdx=-1;
+      ch.progress=0;ch.prevIdx=-1;ch.epilogueFired=false;
       buildTimeline(ch);updateTL(ch);
       if(!targetB){ov.classList.add('hide');buildGrid();}
       else{$('drop2-hint').classList.remove('show');}
@@ -1116,7 +1177,14 @@ function stepChannel(ch,vis,ts,dt,t){
     ch.playElapsed+=dt;
     if(ch.progress>=1){
       if(ch.gallery){ch.progress=0;ch.prevIdx=-1;}
-      else{ch.progress=1;ch.playing=false;}
+      else{
+        ch.progress=1;ch.playing=false;
+        if(!ch.epilogueFired){
+          ch.epilogueFired=true;
+          if(ch.audioReady&&ch.music)ch.music.epilogue();
+          ch.flash=.35;
+        }
+      }
     }
     updateTL(ch);
   }
